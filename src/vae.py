@@ -19,12 +19,7 @@ class VAE(nn.Module):
 
 		Parameters
 		----------
-		prior_dist : ...
-		likelihood_dist : ...
-		variational_dist : ...
-		encoder : ...
-		decoder : ...
-		params : ...
+		...
 		"""
 		super(VAE, self).__init__()
 		self.encoder = encoder
@@ -53,7 +48,7 @@ class VAE(nn.Module):
 		return self._var_dist_params
 
 
-	def forward(self, x, K=1):
+	def forward(self, x):
 		"""
 
 		Parameters
@@ -62,15 +57,22 @@ class VAE(nn.Module):
 		K : ...
 		"""
 		# Encode data.
-		self._qz_x_params = self.encoder(x)
-		# Combine evidence and make a variational distribution.
-		qz_x = self.qz_x(*self._qz_x_params)
+		var_dist_params = self.encoder(x)
+		# Combine evidence.
+		var_post_params = self.variational_strategy(*var_dist_params)
+		# Make a variational posterior.
+		var_post = self.variational_posterior(*var_post_params)
 		# Sample from posterior.
-		zs = qz_x.rsample(torch.Size([K]))
-		# Decode samples to get likelihood distributions.
-		px_z = self.px_z(*self.dec(zs))
-		# Return the relevant distributions and samples.
-		return qz_x, px_z, zs
+		z_samples, log_qz = var_post.rsample(*self.sample_params)
+		# Decode samples to get likelihood parameters.
+		likelihood_params = self.decoder(z_samples)
+		# Evaluate likelihood.
+		log_like = self.likelihood.log_prob(x, likelihood_params)
+		# Evaluate loss.
+		loss = self.objective(self)
+		return loss
+		# # Return the relevant things.
+		# return log_qz, log_like
 
 
 	def generate(self, N, K):

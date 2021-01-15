@@ -8,7 +8,7 @@ __date__ = "January 2021"
 import torch
 
 
-class FcNet(torch.nn.Module):
+class MLP(torch.nn.Module):
 
 	def __init__(self, dims, activation=torch.nn.ReLU):
 		"""
@@ -19,10 +19,9 @@ class FcNet(torch.nn.Module):
 		dims : list of int
 		activation : torch.nn.Module?
 		"""
-		super(FcNet, self).__init__()
+		super(MLP, self).__init__()
 		layers = []
 		assert len(dims) > 1
-		if len(dims) == 2:
 		for i in range(len(dims)-2):
 			layers.append(torch.nn.Linear(dims[i],dims[i+1]))
 			layers.append(activation())

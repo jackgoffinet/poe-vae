@@ -9,17 +9,18 @@ import numpy as np
 import torch
 
 
-class SphericalNormalLikelihood():
+class SphericalGaussianLikelihood():
 
-	def __init__(self, x_dim):
+	def __init__(self, x_dim, std_dev):
 		"""
-		Spherical normal likelihood distribution.
+		Spherical Gaussian likelihood distribution.
 
 		Parameters
 		----------
 		x_dim : int
 		"""
 		self.x_dim = x_dim
+		self.std_dev = std_dev
 		self.constant = None # TO DO
 
 
@@ -32,7 +33,7 @@ class SphericalNormalLikelihood():
 		"""
 		raise NotImplementedError
 
-		
+
 
 if __name__ == '__main__':
 	pass

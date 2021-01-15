@@ -6,7 +6,6 @@ __date__ = "January 2021"
 
 
 
-
 def elbo(model, x, k):
 	""" """
 	pass
@@ -17,7 +16,7 @@ def elbo_pointwise_kl(model, x, k):
 	pass
 
 
-def iwae_elbo(model, x, k):
+def iwae(model, x, k):
 	""" """
 	pass
 

@@ -7,42 +7,64 @@ __date__ = "January 2021"
 
 import argparse
 import datetime
-# import datetime
-# from pathlib import Path
-# from tempfile import mkdtemp
 from collections import defaultdict
 import json
+import numpy as np
 import os
 import sys
+import torch
 from zlib import adler32 # hash function
 
-import numpy as np
-import torch
-from torch import optim
+from src.utils import Logger, make_vae, make_datasets, make_dataloaders, \
+		check_args
+from src.components import DATASET_KEYS, ENCODER_DECODER_KEYS, \
+		VARIATIONAL_STRATEGY_KEYS, VARIATIONAL_POSTERIOR_KEYS, PRIOR_KEYS, \
+		LIKELIHOOD_KEYS, OBJECTIVE_KEYS
 
-# import models
-# import objectives
-from src.utils import Logger # , Timer, save_model, save_vars, unpack_data
 
 LOGGING_DIR = 'logs'
 ARGS_FN = 'args.json'
 LOG_FN = 'run.log'
 
-INDENT = 4 # for JSON
-DIR_LEN = 8 # for logging
+INDENT = 4 # for pretty JSON
+DIR_LEN = 8 # for naming the logging directory
 
 
 # Handle the arguments.
-parser = argparse.ArgumentParser(description='PoE VAE')
-parser.add_argument('--experiment', type=str, default='', metavar='E',
-					help='experiment name')
-parser.add_argument('--model', type=str, default='mnist_svhn', metavar='M', # choices=[s[4:] for s in dir(models) if 'VAE_' in s],
-					help='model name (default: mnist_svhn)')
-parser.add_argument('--obj', type=str, default='elbo', metavar='O',
-					choices=['elbo', 'iwae', 'dreg'],
-					help='objective to use (default: elbo)')
-parser.add_argument('--K', type=int, default=20, metavar='K',
-					help='number of particles to use for iwae/dreg (default: 10)')
+parser = argparse.ArgumentParser(description='Multimodal VAEs')
+
+# VAE components.
+parser.add_argument('-x', '--dataset', type=str, default='mnist_halves',
+					choices=DATASET_KEYS,
+					help='experiment dataset name')
+parser.add_argument('-e', '--encoder', type=str, default='mlp',
+					choices=ENCODER_DECODER_KEYS,
+					help='encoder name')
+parser.add_argument('-v', '--variational-strategy', type=str,
+					default='gaussian_poe',
+					choices=VARIATIONAL_STRATEGY_KEYS,
+					help='variational strategy name')
+parser.add_argument('-q', '--variational-posterior', type=str,
+					default='diag_gaussian',
+					choices=VARIATIONAL_POSTERIOR_KEYS,
+					help='variational posterior name')
+parser.add_argument('-p', '--prior', type=str, default='standard_gaussian',
+					choices=PRIOR_KEYS,
+					help='prior name')
+parser.add_argument('-d', '--decoder', type=str, default='mlp',
+					choices=ENCODER_DECODER_KEYS,
+					help='decoder name')
+parser.add_argument('-l', '--likelihood', type=str,
+					default='spherical_gaussian',
+					choices=LIKELIHOOD_KEYS,
+					help='likelihood name')
+parser.add_argument('-o', '--objective', type=str, default='elbo',
+					choices=OBJECTIVE_KEYS,
+					help='objective name')
+
+# Other arguments.
+parser.add_argument('--K', type=int, default=10, metavar='K',
+					help='number of particles to use for IWAE (default: 10)')
 parser.add_argument('--batch-size', type=int, default=256, metavar='N',
 					help='batch size for data (default: 256)')
 parser.add_argument('--epochs', type=int, default=10, metavar='E',
@@ -56,7 +78,7 @@ parser.add_argument('--pre-trained', type=str, default="",
 parser.add_argument('--learn-prior', action='store_true', default=False,
 					help='learn model prior parameters')
 parser.add_argument('--logp', action='store_true', default=False,
-					help='estimate tight marginal likelihood on completion')
+					help='estimate marginal likelihood on completion')
 parser.add_argument('--print-freq', type=int, default=0, metavar='f',
 					help='frequency with which to print stats (default: 0)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
@@ -71,7 +93,14 @@ args_json_str = json.dumps(args.__dict__, sort_keys=True, indent=4)
 print(args_json_str)
 
 
-# Hash the JSON string to make an experiment directory.
+# TO DO: make sure args are compatible!
+print(type(args.prior))
+check_args(args)
+print(type(args.prior))
+quit()
+
+
+# Hash the JSON string to make a logging directory.
 exp_dir = str(adler32(str.encode(args_json_str))).zfill(DIR_LEN)[-DIR_LEN:]
 exp_dir = os.path.join(LOGGING_DIR, exp_dir)
 log_fn = os.path.join(exp_dir, LOG_FN)
@@ -98,7 +127,10 @@ torch.backends.cudnn.benchmark = True
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-quit()
+# Set up CUDA.
+args.cuda = not args.no_cuda and torch.cuda.is_available()
+device = torch.device("cuda" if args.cuda else "cpu")
+
 
 # TO DO!!!!
 # # load args from disk if pretrained model path is given
@@ -107,19 +139,16 @@ quit()
 # 	pretrained_path = args.pre_trained
 # 	args = torch.load(args.pre_trained + '/args.rar')
 
-args.cuda = not args.no_cuda and torch.cuda.is_available()
-device = torch.device("cuda" if args.cuda else "cpu")
+
+# # load model
+# modelC = getattr(models, 'VAE_{}'.format(args.model))
+# model = modelC(args).to(device)
 
 
-# load model
-modelC = getattr(models, 'VAE_{}'.format(args.model))
-model = modelC(args).to(device)
-
-
-if pretrained_path:
-	print('Loading model {} from {}'.format(model.modelName, pretrained_path))
-	model.load_state_dict(torch.load(pretrained_path + '/model.rar'))
-	model._pz_params = model._pz_params
+# if pretrained_path:
+# 	print('Loading model {} from {}'.format(model.modelName, pretrained_path))
+# 	model.load_state_dict(torch.load(pretrained_path + '/model.rar'))
+# 	model._pz_params = model._pz_params
 
 # # ???
 # if not args.experiment:
@@ -129,15 +158,16 @@ if pretrained_path:
 # # -- also save object because we want to recover these for other things
 # torch.save(args, '{}/args.rar'.format(runPath))
 
-# preparation for training
-optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
-					   lr=1e-3, amsgrad=True)
-train_loader, test_loader = model.getDataLoaders(args.batch_size, device=device)
-objective = getattr(objectives,
-					('m_' if hasattr(model, 'vaes') else '')
-					+ args.obj
-					+ ('_looser' if (args.looser and args.obj != 'elbo') else ''))
-t_objective = getattr(objectives, ('m_' if hasattr(model, 'vaes') else '') + 'iwae')
+
+# # preparation for training
+# optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
+# 					   lr=1e-3, amsgrad=True)
+# train_loader, test_loader = model.getDataLoaders(args.batch_size, device=device)
+# objective = getattr(objectives,
+# 					('m_' if hasattr(model, 'vaes') else '')
+# 					+ args.obj
+# 					+ ('_looser' if (args.looser and args.obj != 'elbo') else ''))
+# t_objective = getattr(objectives, ('m_' if hasattr(model, 'vaes') else '') + 'iwae')
 
 
 def train(epoch, agg):
@@ -186,8 +216,15 @@ def estimate_log_marginal(K):
 
 
 if __name__ == '__main__':
-	# What's happening here?
+	# Make Datasets.
+	datasets = make_datasets(args)
+	# Make Dataloaders.
+	dataloaders = make_dataloaders(datasets, args.batch_size)
+	# Make VAE.
+	model = make_vae(args)
+	# Set up a data aggregrator.
 	agg = defaultdict(list)
+	# Enter a train loop.
 	for epoch in range(1, args.epochs + 1):
 		train(epoch, agg)
 		test(epoch, agg)

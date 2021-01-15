@@ -1,5 +1,5 @@
 """
-Define the datasets here.
+Different datasets are defined here.
 
 """
 __date__ = "January 2021"
@@ -40,7 +40,6 @@ class MnistHalvesDataset(Dataset):
 		n, d = images.shape[0], images.shape[1]//2
 		self.view_1 = np.zeros((n,d))
 		self.view_2 = np.zeros((n,d))
-		# Double view.
 		self.view_1[:n] = images[:,:d]
 		self.view_2[:n] = images[:,d:]
 		if missingness > 0.0:

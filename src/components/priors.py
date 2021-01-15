@@ -1,25 +1,27 @@
 """
-Define variational posteriors.
+Define latent priors.
 
 """
 __date__ = "January 2021"
 
 
+import numpy as np
 import torch
 
 
 
-class DiagonalNormalPosterior():
+class StandardGaussianPrior():
 
-	def __init__(self, log_precisions):
+	def __init__(self, z_dim):
 		"""
-		Diagonal Normal varitional posterior.
+		Standard Gaussian prior distribution.
 
 		Parameters
 		----------
-		log_precisions : torch.Tensor
+		z_dim : int
 		"""
-		self.log_precisions = log_precisions
+		self.z_dim = z_dim
+		self.constant = None # TO DO
 
 
 	def rsample(self):
