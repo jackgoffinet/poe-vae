@@ -13,7 +13,7 @@ import numpy as np
 import os
 import sys
 import torch
-from zlib import adler32 # hash function
+from zlib import adler32
 
 from src.utils import Logger, make_vae, make_datasets, make_dataloaders, \
 		check_args
@@ -72,11 +72,11 @@ parser.add_argument('--epochs', type=int, default=10, metavar='E',
 parser.add_argument('--latent-dim', type=int, default=20, metavar='L',
 					help='latent dimensionality (default: 20)')
 parser.add_argument('--num-hidden-layers', type=int, default=1, metavar='H',
-					help='number of hidden layers in enc and dec (default: 1)')
+					help='number of hidden layers (default: 1)')
+parser.add_argument('--hidden-layer-dim', type=int, default=64, metavar='H',
+					help='hidden layer dimension (default: 64)')
 parser.add_argument('--pre-trained', type=str, default="",
 					help='path to pre-trained model (train from scratch if empty)')
-parser.add_argument('--learn-prior', action='store_true', default=False,
-					help='learn model prior parameters')
 parser.add_argument('--logp', action='store_true', default=False,
 					help='estimate marginal likelihood on completion')
 parser.add_argument('--print-freq', type=int, default=0, metavar='f',
@@ -85,19 +85,13 @@ parser.add_argument('--no-cuda', action='store_true', default=False,
 					help='disable CUDA use')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
 					help='random seed (default: 1)')
+parser.add_argument('--data-fn', type=str, default='',
+					help='data filename')
 
 
 # Parse and print args.
 args = parser.parse_args()
 args_json_str = json.dumps(args.__dict__, sort_keys=True, indent=4)
-print(args_json_str)
-
-
-# TO DO: make sure args are compatible!
-print(type(args.prior))
-check_args(args)
-print(type(args.prior))
-quit()
 
 
 # Hash the JSON string to make a logging directory.
@@ -105,7 +99,7 @@ exp_dir = str(adler32(str.encode(args_json_str))).zfill(DIR_LEN)[-DIR_LEN:]
 exp_dir = os.path.join(LOGGING_DIR, exp_dir)
 log_fn = os.path.join(exp_dir, LOG_FN)
 if os.path.exists(exp_dir):
-	_ = input("Experiment path already exists! Continue?")
+	_ = input("Experiment path already exists! Continue? ")
 	try:
 		os.remove(log_fn)
 	except FileNotFoundError:
@@ -117,8 +111,13 @@ with open(args_fn, 'w') as fp:
 	json.dump(args.__dict__, fp, sort_keys=True, indent=4)
 
 
-# Set up a Logger object to log stdout and record the time.
+# Check the arguments, convert component names to objects and classes.
+check_args(args)
+
+
+# Set up a Logger object to log stdout.
 sys.stdout = Logger(log_fn)
+print(args_json_str)
 print(datetime.datetime.now().isoformat())
 
 
@@ -222,6 +221,7 @@ if __name__ == '__main__':
 	dataloaders = make_dataloaders(datasets, args.batch_size)
 	# Make VAE.
 	model = make_vae(args)
+	quit()
 	# Set up a data aggregrator.
 	agg = defaultdict(list)
 	# Enter a train loop.

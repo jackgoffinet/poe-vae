@@ -11,11 +11,6 @@ def elbo(model, x, k):
 	pass
 
 
-def elbo_pointwise_kl(model, x, k):
-	""" """
-	pass
-
-
 def iwae(model, x, k):
 	""" """
 	pass

@@ -10,24 +10,21 @@ import torch
 
 
 
-class StandardGaussianPrior():
+class StandardGaussianPrior(torch.nn.Module):
+	n_parameters = 0
+	magic_constant = None # TO DO
 
-	def __init__(self, z_dim):
-		"""
-		Standard Gaussian prior distribution.
+	def __init__(self):
+		"""Standard Gaussian prior distribution."""
+		super(StandardGaussianPrior, self).__init__()
 
-		Parameters
-		----------
-		z_dim : int
-		"""
-		self.z_dim = z_dim
-		self.constant = None # TO DO
-
+	def forward(self, x):
+		""" """
+		raise NotImplementedError
 
 	def rsample(self):
 		""" """
-		return torch.randn()
-
+		raise NotImplementedError
 
 	def log_prob(self, samples):
 		"""

@@ -13,7 +13,7 @@ import torch.nn as nn
 class VAE(nn.Module):
 
 	def __init__(self, encoder, variational_strategy, variational_posterior, \
-		prior, decoder, likelihood):
+		prior, decoder, likelihood, objective, lr=1e-3):
 		"""
 		Abstract VAE class
 
@@ -28,24 +28,15 @@ class VAE(nn.Module):
 		self.prior = prior
 		self.decoder = decoder
 		self.likelihood = likelihood
+		self.objective = objective
 		self.model_type = None
 		# # Extra parameters
 		# self.params = params
 		# Prior distribution parameters
-		self._prior_params = None
+		# self._prior_params = None
 		# Variational distribution parameters: populated in `forward`
-		self._var_dist_params = None
-
-
-	@property
-	def prior_params(self):
-		return self._prior_params
-
-	@property
-	def var_dist_params(self):
-		if self._var_dist_params is None:
-			raise NameError("var_dist params not initalised yet!")
-		return self._var_dist_params
+		# self._var_dist_params = None
+		self.optimizer = torch.optim.Adam(self.parameters, lr=lr)
 
 
 	def forward(self, x):
@@ -71,8 +62,6 @@ class VAE(nn.Module):
 		# Evaluate loss.
 		loss = self.objective(self)
 		return loss
-		# # Return the relevant things.
-		# return log_qz, log_like
 
 
 	def generate(self, N, K):

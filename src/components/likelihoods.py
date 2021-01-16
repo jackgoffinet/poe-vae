@@ -1,6 +1,9 @@
 """
 Define observation likelihoods.
 
+TO DO
+-----
+* generalize to multi-parameter likelihoods, like in variational_posteriors.py
 """
 __date__ = "January 2021"
 
@@ -9,20 +12,19 @@ import numpy as np
 import torch
 
 
-class SphericalGaussianLikelihood():
+class SphericalGaussianLikelihood(torch.nn.Module):
+	magic_constant = None # TO DO
 
-	def __init__(self, x_dim, std_dev):
+	def __init__(self, std_dev):
 		"""
 		Spherical Gaussian likelihood distribution.
 
-		Parameters
-		----------
-		x_dim : int
 		"""
-		self.x_dim = x_dim
+		super(SphericalGaussianLikelihood, self).__init__()
 		self.std_dev = std_dev
-		self.constant = None # TO DO
 
+	def forward(self, x):
+		raise NotImplementedError
 
 	def log_prob(self, samples):
 		"""

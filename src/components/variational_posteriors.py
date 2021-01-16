@@ -9,23 +9,22 @@ import torch
 
 
 
-class DiagonalGaussianPosterior():
+class DiagonalGaussianPosterior(torch.nn.Module):
+	n_parameters = 2 # mean and precision vectors
+	parameter_dim_func = lambda d: (d,d) # latent_dim -> parameter dimensions
+	magic_constant = None # TO DO
 
-	def __init__(self, log_precisions):
-		"""
-		Diagonal Normal varitional posterior.
+	def __init__(self):
+		"""Diagonal Normal varitional posterior."""
+		super(DiagonalGaussianPosterior, self).__init__()
 
-		Parameters
-		----------
-		log_precisions : torch.Tensor
-		"""
-		self.log_precisions = log_precisions
-
+	def forward(self, mean, log_precision):
+		""" """
+		raise NotImplementedError
 
 	def rsample(self):
 		""" """
-		return torch.randn()
-
+		raise NotImplementedError
 
 	def log_prob(self, samples):
 		"""

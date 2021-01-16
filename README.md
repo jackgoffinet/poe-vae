@@ -8,7 +8,7 @@ This repo contains ...
 This repository is based on code from the
 [MMVAE repo](https://github.com/iffsid/mmvae).
 
-### Modular Multimodal VAE Abstraction:
+### Modular Multimodal VAE Abstraction
 
 ```python
 import torch
@@ -16,8 +16,12 @@ import torch
 class VAE(torch.nn.Module):
 	"""Abstract VAE class."""
 
-	# def __init__(self, *args):
-	#		...
+	def __init__(self, encoder, variational_strategy, variational_posterior, \
+		prior, decoder, likelihood):
+		"""
+		All parameters are torch.nn.Modules. Everything is a Module.
+		"""
+		# ...
 
 	def forward(self, x):
 		# Encode data.
@@ -27,11 +31,11 @@ class VAE(torch.nn.Module):
 		# Make a variational posterior.
 		var_post = self.variational_posterior(*var_post_params)
 		# Sample from posterior.
-		z_samples, log_qz = var_post.rsample(*self.sample_params)
+		z_samples, log_qz = var_post(*self.sample_params)
 		# Decode samples to get likelihood parameters.
 		likelihood_params = self.decoder(z_samples)
 		# Evaluate likelihood.
-		log_like = self.likelihood.log_prob(x, likelihood_params)
+		log_like = self.likelihood(x, likelihood_params)
 		# Return the relevant things.
 		return log_qz, log_like
 ```

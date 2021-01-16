@@ -22,10 +22,10 @@ ENCODER_DECODER_KEYS = sorted(list(ENCODER_DECODER_MAP.keys()))
 
 
 # Variational strategies
-from .variational_strategies import GaussianPoeStrategy, GaussianMixtureStrategy
+from .variational_strategies import GaussianPoeStrategy, GaussianMoeStrategy
 VARIATIONAL_STRATEGY_MAP = {
 	'gaussian_poe': GaussianPoeStrategy,
-	'gaussian_moe': GaussianMixtureStrategy,
+	'gaussian_moe': GaussianMoeStrategy,
 }
 VARIATIONAL_STRATEGY_KEYS = sorted(list(VARIATIONAL_STRATEGY_MAP.keys()))
 

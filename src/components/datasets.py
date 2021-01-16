@@ -6,18 +6,34 @@ __date__ = "January 2021"
 
 
 import numpy as np
+import torch
 from torch.utils.data import Dataset
 
 
+MNIST_DEFAULT_FN = '/media/jackg/Jacks_Animal_Sounds/datasets/mnist_train.csv'
+MNIST_DEFAULT_FN = '/media/jackg/Jacks_Animal_Sounds/datasets/mnist_test.csv' # TEMP!!
+print("Using temporary MNIST data!")
 
-def get_mnist_data(data_fn):
-	"""Load MNIST from a .csv file."""
+
+
+def load_mnist_data(data_fn):
+	"""
+	Load MNIST from a .csv file.
+
+	TO DO: toggle between binarized and real-valued input
+	"""
+	if data_fn == '':
+		data_fn = MNIST_DEFAULT_FN
 	d = np.loadtxt(data_fn, delimiter=',')
 	images, labels = d[:,1:]/255, np.array(d[:,0], dtype='int')
 	return images, labels
 
 
+
 class MnistHalvesDataset(Dataset):
+	n_modalities = 2
+	modality_dim = 392
+	vectorized_modalities = False
 
 	def __init__(self, data_fn, missingness=0.0, digit=2):
 		"""
@@ -32,11 +48,10 @@ class MnistHalvesDataset(Dataset):
 		self.data_fn = data_fn
 		self.missingness = missingness
 		self.digit = digit
-		images, labels = get_mnist_data(data_fn)
+		images, labels = load_mnist_data(data_fn)
 		idx = np.argwhere(labels == digit).flatten()
 		images = images[idx]
 		images = images[np.random.permutation(images.shape[0])]
-		print("\tx:", images.shape)
 		n, d = images.shape[0], images.shape[1]//2
 		self.view_1 = np.zeros((n,d))
 		self.view_2 = np.zeros((n,d))
@@ -58,6 +73,9 @@ class MnistHalvesDataset(Dataset):
 
 
 class MnistMcarDataset(Dataset):
+	n_modalities = 784
+	modality_dim = 1
+	vectorized_modalities = True
 
 	def __init__(self, data_fn, missingness=0.0, digit=2):
 		"""
