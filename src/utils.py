@@ -1,6 +1,18 @@
 """
 Useful functions and classes.
 
+Contains
+--------
+* Logger: class
+* make_datasets: function
+* make_dataloaders: function
+* make_vae: function
+* make_objective: function
+* make_encoder: function
+* make_decoder: function
+* make_likelihood: function
+* check_args: function
+
 """
 __date__ = "January 2021"
 
@@ -13,7 +25,6 @@ from .components import DATASET_MAP, ENCODER_DECODER_MAP, \
 		VARIATIONAL_STRATEGY_MAP, VARIATIONAL_POSTERIOR_MAP, PRIOR_MAP, \
 		LIKELIHOOD_MAP, OBJECTIVE_MAP
 from.components.encoders_decoders import SplitLinearLayer, NetworkList
-from .vae import VAE
 
 
 
@@ -33,9 +44,6 @@ class Logger(object):
 		self.log.write(message)
 
 	def flush(self):
-		# this flush method is needed for python 3 compatibility.
-		# this handles the flush command by doing nothing.
-		# you might want to specify some extra behavior here.
 		pass
 
 
@@ -95,18 +103,33 @@ def make_vae(args):
 
 	Returns
 	-------
-	model : .vae.VAE
+	vae : torch.nn.ModuleDict
 	"""
-	model = VAE( \
-			make_encoder(args),
-			args.variational_strategy(),
-			args.variational_posterior(),
-			args.prior(),
-			make_decoder(args),
-			args.likelihood(),
-			args.objective(),
-	)
-	return model
+	vae = torch.nn.ModuleDict([ \
+			['encoder', make_encoder(args)],
+			['variational_strategy', args.variational_strategy()],
+			['variational_posterior', args.variational_posterior()],
+			['prior', args.prior()],
+			['decoder', make_decoder(args)],
+			['likelihood', args.likelihood(args.obs_std_dev)],
+	])
+	return vae
+
+
+def make_objective(model, args):
+	"""
+	Make the objective.
+
+	Parameters
+	----------
+	model : .vae.VAE
+	args : argparse.Namespace
+
+	Returns
+	-------
+	.components.objectives.VaeObjective (subclasses torch.nn.Module)
+	"""
+	return args.objective(model)
 
 
 def make_encoder(args):
@@ -121,25 +144,69 @@ def make_encoder(args):
 
 	Returns
 	-------
-	encoders : .components.encoders_decoders.NetworkList (torch.nn.Module)
+	encoder : .components.encoders_decoders.NetworkList (torch.nn.Module)
+	"""
+	in_dim = args.dataset.modality_dim
+	z_dim = args.latent_dim
+	output_dims = args.variational_posterior.parameter_dim_func(z_dim)
+	net_class = args.encoder
+	return _make_net_helper(args, in_dim, output_dims, net_class)
+
+
+def make_decoder(args):
+	"""
+	Make the decoder.
+
+	Each modality gets its own decoder, all with identical architectures.
+
+	Parameters
+	----------
+	args : argparse.Namespace
+
+	Returns
+	-------
+	decoder : .components.encoders_decoders.NetworkList (torch.nn.Module)
+	"""
+	in_dim = args.latent_dim
+	modality_dim = args.dataset.modality_dim
+	output_dims = args.likelihood.parameter_dim_func(modality_dim)
+	net_class = args.decoder
+	return _make_net_helper(args, in_dim, output_dims, net_class)
+
+
+def _make_net_helper(args, in_dim, output_dims, net_class):
+	"""
+	Helper for `make_encoder` and `make_decoder`.
+
+	Parameters
+	----------
+	TO DO
 	"""
 	# Collect parameters.
 	n_modalities = args.dataset.n_modalities
-	modality_dim = args.dataset.modality_dim
 	vectorized_modalities = args.dataset.vectorized_modalities
-	z_dim = args.latent_dim
-	output_dims = args.variational_posterior.parameter_dim_func(z_dim)
 	# Make layers.
 	if vectorized_modalities:
 		raise NotImplementedError
 	else:
 		# Make everything up to the last layer.
-		dims = [modality_dim] + [args.hidden_layer_dim]*args.num_hidden_layers
-		encoders = [args.encoder(dims) for _ in range(n_modalities)]
+		dims = [in_dim] + [args.hidden_layer_dim]*args.num_hidden_layers
+		encoders = [net_class(dims) for _ in range(n_modalities)]
 		for i in range(n_modalities):
 			last_layer = SplitLinearLayer(args.hidden_layer_dim, output_dims)
 			encoders[i] = torch.nn.Sequential(encoders[i], last_layer)
-	return NetworkList(encoders)
+		return NetworkList(torch.nn.ModuleList(encoders))
+
+
+def make_likelihood(args):
+	"""
+	Make the VAE likelihood.
+
+	Parameters
+	----------
+	args : argparse.Namespace
+	"""
+	raise NotImplementedError
 
 
 def check_args(args):

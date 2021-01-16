@@ -55,10 +55,10 @@ LIKELIHOOD_KEYS = sorted(list(LIKELIHOOD_MAP.keys()))
 
 
 # Objectives
-from .objectives import elbo, iwae
+from .objectives import StandardElbo, IwaeElbo
 OBJECTIVE_MAP = {
-	'elbo': elbo,
-	'iwae': iwae,
+	'elbo': StandardElbo,
+	'iwae': IwaeElbo,
 }
 OBJECTIVE_KEYS = sorted(list(OBJECTIVE_MAP.keys()))
 

@@ -1,5 +1,6 @@
 logs/*
 !logs/note.txt
-*.DS_Store
+**.DS_Store
+**.log
 *__pycache__
 data/*

@@ -16,7 +16,7 @@ import torch
 from zlib import adler32
 
 from src.utils import Logger, make_vae, make_datasets, make_dataloaders, \
-		check_args
+		check_args, make_objective
 from src.components import DATASET_KEYS, ENCODER_DECODER_KEYS, \
 		VARIATIONAL_STRATEGY_KEYS, VARIATIONAL_POSTERIOR_KEYS, PRIOR_KEYS, \
 		LIKELIHOOD_KEYS, OBJECTIVE_KEYS
@@ -71,6 +71,8 @@ parser.add_argument('--epochs', type=int, default=10, metavar='E',
 					help='number of epochs to train (default: 10)')
 parser.add_argument('--latent-dim', type=int, default=20, metavar='L',
 					help='latent dimensionality (default: 20)')
+parser.add_argument('--obs-std-dev', type=float, default=0.1, metavar='L',
+					help='Observation standard deviation (default: 0.1)')
 parser.add_argument('--num-hidden-layers', type=int, default=1, metavar='H',
 					help='number of hidden layers (default: 1)')
 parser.add_argument('--hidden-layer-dim', type=int, default=64, metavar='H',
@@ -95,6 +97,7 @@ args_json_str = json.dumps(args.__dict__, sort_keys=True, indent=4)
 
 
 # Hash the JSON string to make a logging directory.
+# TO DO: put the hash string function in utils.py
 exp_dir = str(adler32(str.encode(args_json_str))).zfill(DIR_LEN)[-DIR_LEN:]
 exp_dir = os.path.join(LOGGING_DIR, exp_dir)
 log_fn = os.path.join(exp_dir, LOG_FN)
@@ -106,6 +109,9 @@ if os.path.exists(exp_dir):
 		pass
 else:
 	os.makedirs(exp_dir)
+
+
+# Write the parameters to a JSON file.
 args_fn = os.path.join(exp_dir, ARGS_FN)
 with open(args_fn, 'w') as fp:
 	json.dump(args.__dict__, fp, sort_keys=True, indent=4)
@@ -126,92 +132,62 @@ torch.backends.cudnn.benchmark = True
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
+
 # Set up CUDA.
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 device = torch.device("cuda" if args.cuda else "cpu")
 
 
 # TO DO!!!!
-# # load args from disk if pretrained model path is given
-# pretrained_path = ""
-# if args.pre_trained:
-# 	pretrained_path = args.pre_trained
-# 	args = torch.load(args.pre_trained + '/args.rar')
+# Load pretrained models.
 
 
-# # load model
-# modelC = getattr(models, 'VAE_{}'.format(args.model))
-# model = modelC(args).to(device)
+def train_epoch(objective, loader, optimizer, epoch, agg):
+	"""
+	Train for a single epoch.
 
-
-# if pretrained_path:
-# 	print('Loading model {} from {}'.format(model.modelName, pretrained_path))
-# 	model.load_state_dict(torch.load(pretrained_path + '/model.rar'))
-# 	model._pz_params = model._pz_params
-
-# # ???
-# if not args.experiment:
-# 	args.experiment = model.modelName
-
-
-# # -- also save object because we want to recover these for other things
-# torch.save(args, '{}/args.rar'.format(runPath))
-
-
-# # preparation for training
-# optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
-# 					   lr=1e-3, amsgrad=True)
-# train_loader, test_loader = model.getDataLoaders(args.batch_size, device=device)
-# objective = getattr(objectives,
-# 					('m_' if hasattr(model, 'vaes') else '')
-# 					+ args.obj
-# 					+ ('_looser' if (args.looser and args.obj != 'elbo') else ''))
-# t_objective = getattr(objectives, ('m_' if hasattr(model, 'vaes') else '') + 'iwae')
-
-
-def train(epoch, agg):
-	model.train()
+	Parameters
+	----------
+	...
+	"""
+	objective.train()
 	b_loss = 0
-	for i, dataT in enumerate(train_loader):
-		data = unpack_data(dataT, device=device)
+	for i, batch in enumerate(loader):
 		optimizer.zero_grad()
-		loss = -objective(model, data, K=args.K)
+		loss = objective(model, batch.to(device))
 		loss.backward()
 		optimizer.step()
 		b_loss += loss.item()
-		if args.print_freq > 0 and i % args.print_freq == 0:
-			print("iteration {:04d}: loss: {:6.3f}".format(i, loss.item() / args.batch_size))
-	agg['train_loss'].append(b_loss / len(train_loader.dataset))
+		# if args.print_freq > 0 and i % args.print_freq == 0:
+		# 	print("iteration {:04d}: loss: {:6.3f}".format(i, loss.item() / args.batch_size))
+	agg['train_loss'].append(b_loss / len(loader.dataset))
 	print('====> Epoch: {:03d} Train loss: {:.4f}'.format(epoch, agg['train_loss'][-1]))
 
 
-def test(epoch, agg):
-	model.eval()
-	b_loss = 0
-	with torch.no_grad():
-		for i, dataT in enumerate(test_loader):
-			data = unpack_data(dataT, device=device)
-			loss = -t_objective(model, data, K=args.K)
-			b_loss += loss.item()
-			if i == 0:
-				model.reconstruct(data, runPath, epoch)
-				if not args.no_analytics:
-					model.analyse(data, runPath, epoch)
-	agg['test_loss'].append(b_loss / len(test_loader.dataset))
-	print('====>             Test loss: {:.4f}'.format(agg['test_loss'][-1]))
+def test_epoch(objective, loader, epoch, agg):
+	"""
+	Test on the full test set.
+
+	Parameters
+	----------
+	...
+	"""
+	objective.eval()
+	raise NotImplementedError
 
 
-def estimate_log_marginal(K):
-	"""Compute an IWAE estimate of the log-marginal likelihood of test data."""
-	model.eval()
-	marginal_loglik = 0
-	with torch.no_grad():
-		for dataT in test_loader:
-			data = unpack_data(dataT, device=device)
-			marginal_loglik += -t_objective(model, data, K).item()
+# def estimate_log_marginal(K):
+# 	"""Compute an IWAE estimate of the log-marginal likelihood of test data."""
+# 	model.eval()
+# 	marginal_loglik = 0
+# 	with torch.no_grad():
+# 		for dataT in test_loader:
+# 			data = unpack_data(dataT, device=device)
+# 			marginal_loglik += -t_objective(model, data, K).item()
+#
+# 	marginal_loglik /= len(test_loader.dataset)
+# 	print('Marginal Log Likelihood (IWAE, K = {}): {:.4f}'.format(K, marginal_loglik))
 
-	marginal_loglik /= len(test_loader.dataset)
-	print('Marginal Log Likelihood (IWAE, K = {}): {:.4f}'.format(K, marginal_loglik))
 
 
 if __name__ == '__main__':
@@ -219,20 +195,24 @@ if __name__ == '__main__':
 	datasets = make_datasets(args)
 	# Make Dataloaders.
 	dataloaders = make_dataloaders(datasets, args.batch_size)
-	# Make VAE.
+	# Make the VAE.
 	model = make_vae(args)
-	quit()
+	# Make the objective.
+	objective = make_objective(model, args)
+	# Make the optimizer.
+	optimizer = torch.optim.Adam(objective.parameters(), lr=1e-3)
 	# Set up a data aggregrator.
 	agg = defaultdict(list)
 	# Enter a train loop.
 	for epoch in range(1, args.epochs + 1):
-		train(epoch, agg)
-		test(epoch, agg)
-		save_model(model, runPath + '/model.rar')
-		save_vars(agg, runPath + '/losses.rar')
-		model.generate(runPath, epoch)
-	if args.logp:  # compute as tight a marginal likelihood as possible
-		estimate_log_marginal(5000)
+		train_epoch(objective, dataloaders['train'], optimizer, epoch, agg)
+		test_epoch(objective, dataloaders['test'], epoch, agg)
+		# ...
+		# save_model(model, runPath + '/model.rar')
+		# save_vars(agg, runPath + '/losses.rar')
+		# model.generate(runPath, epoch)
+	# if args.logp:  # compute as tight a marginal likelihood as possible
+		# estimate_log_marginal(5000)
 
 
 ###
