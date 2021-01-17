@@ -12,7 +12,31 @@ import torch
 
 
 
-class GaussianPoeStrategy(torch.nn.Module):
+class AbstractVariationalStrategy(torch.nn.Module):
+	"""Abstract variational strategy class"""
+
+	def __init__(self):
+		super(AbstractVariationalStrategy, self).__init__()
+
+	def forward(self, *modality_params, nan_mask=None):
+		"""
+		Combine the information from each modality into prior parameters.
+
+		Parameters
+		----------
+		modality_params : ...
+		nan_mask : torch.Tensor or list of torch.Tensor
+			Indicates where data is missing.
+
+		Returns
+		-------
+		prior_parameters : ...
+		"""
+		raise NotImplementedError
+
+
+
+class GaussianPoeStrategy(AbstractVariationalStrategy):
 	EPS = 1e-5
 
 	def __init__(self):
@@ -24,10 +48,9 @@ class GaussianPoeStrategy(torch.nn.Module):
 		...
 		"""
 		super(GaussianPoeStrategy, self).__init__()
-		pass
 
 
-	def forward(self, means, log_precisions):
+	def forward(self, means, log_precisions, nan_mask=None):
 		"""
 		Given means and log precisions, output the product mean and precision.
 
@@ -37,6 +60,8 @@ class GaussianPoeStrategy(torch.nn.Module):
 			means[modality] shape: [batch, z_dim]
 		log_precisions : list of torch.Tensor
 			log_precisions[modality] shape: [batch, z_dim]
+		nan_mask : torch.Tensor or list of torch.Tensor
+			Indicates where data is missing.
 
 		Returns
 		-------
@@ -47,6 +72,9 @@ class GaussianPoeStrategy(torch.nn.Module):
 		"""
 		means = torch.stack(means, dim=1) # [b,m,z]
 		precisions = torch.stack(log_precisions, dim=1).exp() # [b,m,z]
+		if nan_mask is not None:
+			temp_mask = (~torch.stack(nan_mask, dim=1)).float().unsqueeze(-1)
+			precisions = precisions * temp_mask
 		precision = torch.sum(precisions, dim=1)
 		mean = torch.sum(means * precisions, dim=1) / (precision + self.EPS)
 		return mean.squeeze(1), precision.squeeze(1)
@@ -64,7 +92,7 @@ class GaussianMoeStrategy(torch.nn.Module):
 		pass
 
 
-	def forward(self, means, log_precisions):
+	def forward(self, means, log_precisions, nan_mask=None):
 		"""
 		Given means and log precisions, output mixture parameters.
 
@@ -73,6 +101,8 @@ class GaussianMoeStrategy(torch.nn.Module):
 		means : list of torch.Tensor
 			means[modality] = [...fill in dimensions...]
 		log_precisions : list of torch.Tensor
+		nan_mask : torch.Tensor or list of torch.Tensor
+			Indicates where data is missing.
 
 		Returns
 		-------

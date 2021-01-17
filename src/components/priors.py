@@ -33,6 +33,20 @@ class AbstractPrior(torch.nn.Module):
 		"""
 		raise NotImplementedError
 
+	def rsample(self, n_samples):
+		"""
+		Get reparameterized samples from the prior.
+
+		Parameters
+		----------
+		n_samples : int
+
+		Returns
+		-------
+		samples : torch.Tensor
+		"""
+		raise NotImplementedError
+
 
 
 class StandardGaussianPrior(AbstractPrior):
@@ -55,9 +69,21 @@ class StandardGaussianPrior(AbstractPrior):
 		return torch.sum(log_prob, dim=2)
 
 
-	def rsample(self):
-		""" """
-		raise NotImplementedError
+	def rsample(self, n_samples=1):
+		"""
+		Get reparameterized samples from the prior.
+
+		Parameters
+		----------
+		n_samples : int
+
+		Returns
+		-------
+		samples : torch.Tensor
+		"""
+		assert self.dist is not None
+		return self.dist.rsample(sample_shape=(n_samples,)).transpose(0,1)
+
 
 	def log_prob(self, samples):
 		"""

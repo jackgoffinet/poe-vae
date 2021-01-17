@@ -13,10 +13,9 @@ import numpy as np
 import os
 import sys
 import torch
-from zlib import adler32
 
 from src.utils import Logger, make_vae, make_datasets, make_dataloaders, \
-		check_args, make_objective
+		check_args, make_objective, hash_json_str
 from src.components import DATASET_KEYS, ENCODER_DECODER_KEYS, \
 		VARIATIONAL_STRATEGY_KEYS, VARIATIONAL_POSTERIOR_KEYS, PRIOR_KEYS, \
 		LIKELIHOOD_KEYS, OBJECTIVE_KEYS
@@ -25,9 +24,10 @@ from src.components import DATASET_KEYS, ENCODER_DECODER_KEYS, \
 LOGGING_DIR = 'logs'
 ARGS_FN = 'args.json'
 LOG_FN = 'run.log'
+STATE_FN = 'state.tar'
 
 INDENT = 4 # for pretty JSON
-DIR_LEN = 8 # for naming the logging directory
+
 
 
 # Handle the arguments.
@@ -77,8 +77,8 @@ parser.add_argument('--num-hidden-layers', type=int, default=1, metavar='H',
 					help='number of hidden layers (default: 1)')
 parser.add_argument('--hidden-layer-dim', type=int, default=64, metavar='H',
 					help='hidden layer dimension (default: 64)')
-parser.add_argument('--pre-trained', type=str, default="",
-					help='path to pre-trained model (train from scratch if empty)')
+parser.add_argument('--pre-trained', action='store_true', default=False,
+					help='load a saved model')
 parser.add_argument('--logp', action='store_true', default=False,
 					help='estimate marginal likelihood on completion')
 parser.add_argument('--print-freq', type=int, default=0, metavar='f',
@@ -97,18 +97,25 @@ args_json_str = json.dumps(args.__dict__, sort_keys=True, indent=4)
 
 
 # Hash the JSON string to make a logging directory.
-# TO DO: put the hash string function in utils.py
-exp_dir = str(adler32(str.encode(args_json_str))).zfill(DIR_LEN)[-DIR_LEN:]
+exp_dir = hash_json_str(args_json_str)
+# Make various filenames.
 exp_dir = os.path.join(LOGGING_DIR, exp_dir)
 log_fn = os.path.join(exp_dir, LOG_FN)
-if os.path.exists(exp_dir):
-	_ = input("Experiment path already exists! Continue? ")
-	try:
-		os.remove(log_fn)
-	except FileNotFoundError:
-		pass
+state_fn = os.path.join(exp_dir, STATE_FN)
+
+
+# See if we've already started this experiment.
+if args.pre_trained:
+	assert os.path.exists(exp_dir)
 else:
-	os.makedirs(exp_dir)
+	if os.path.exists(exp_dir):
+		_ = input("Experiment path already exists! Continue? ")
+		try:
+			os.remove(log_fn)
+		except FileNotFoundError:
+			pass
+	else:
+		os.makedirs(exp_dir)
 
 
 # Write the parameters to a JSON file.
@@ -138,9 +145,6 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 args.device = torch.device("cuda" if args.cuda else "cpu")
 
 
-# TO DO:
-# Load pretrained models.
-
 
 def train_epoch(objective, loader, optimizer, epoch, agg):
 	"""
@@ -157,9 +161,7 @@ def train_epoch(objective, loader, optimizer, epoch, agg):
 		loss = objective(batch)
 		loss.backward()
 		optimizer.step()
-		b_loss += loss.item()
-		# if args.print_freq > 0 and i % args.print_freq == 0:
-		# 	print("iteration {:04d}: loss: {:6.3f}".format(i, loss.item() / args.batch_size))
+		b_loss += loss.item() * get_batch_len(batch)
 	agg['train_loss'].append(b_loss / len(loader.dataset))
 	print('====> Epoch: {:03d} Train loss: {:.4f}'.format(epoch, agg['train_loss'][-1]))
 
@@ -179,11 +181,34 @@ def test_epoch(objective, loader, epoch, agg):
 		loss = objective(batch)
 		loss.backward()
 		optimizer.step()
-		b_loss += loss.item()
-		# if args.print_freq > 0 and i % args.print_freq == 0:
-		# 	print("iteration {:04d}: loss: {:6.3f}".format(i, loss.item() / args.batch_size))
+		b_loss += loss.item() * get_batch_len(batch)
 	agg['test_loss'].append(b_loss / len(loader.dataset))
 	print('====> Epoch: {:03d} Test loss: {:.4f}'.format(epoch, agg['test_loss'][-1]))
+
+
+def save_state(objective, optimizer, epoch):
+	"""Save state."""
+	print("Saving state to:", state_fn)
+	torch.save({
+			'objective_state_dict': objective.state_dict(),
+			'optimizer_state_dict': optimizer.state_dict(),
+			'epoch': epoch,
+		}, state_fn)
+
+
+def load_state(objective, optimizer):
+	"""Load state."""
+	print("Loading state from:", state_fn)
+	checkpoint = torch.load(state_fn, map_location=args.device)
+	objective.load_state_dict(checkpoint['objective_state_dict'])
+	optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+	return checkpoint['epoch']
+
+
+def get_batch_len(batch):
+	if type(batch) == type([]): # non-vectorized modalities
+		return len(batch[0])
+	return len(batch) # vectorized modalities
 
 
 # def estimate_log_marginal(K):
@@ -211,10 +236,15 @@ if __name__ == '__main__':
 	objective = make_objective(model, args)
 	# Make the optimizer.
 	optimizer = torch.optim.Adam(objective.parameters(), lr=1e-3)
+	# Load pretrained models.
+	if args.pre_trained:
+		prev_epochs = load_state(objective, optimizer)
+	else:
+		prev_epochs = 0
 	# Set up a data aggregrator.
 	agg = defaultdict(list)
 	# Enter a train loop.
-	for epoch in range(1, args.epochs + 1):
+	for epoch in range(prev_epochs + 1, prev_epochs + args.epochs + 1):
 		train_epoch(objective, dataloaders['train'], optimizer, epoch, agg)
 		test_epoch(objective, dataloaders['test'], epoch, agg)
 		# ...
@@ -223,6 +253,7 @@ if __name__ == '__main__':
 		# model.generate(runPath, epoch)
 	# if args.logp:  # compute as tight a marginal likelihood as possible
 		# estimate_log_marginal(5000)
+	save_state(objective, optimizer, prev_epochs + args.epochs)
 
 
 ###

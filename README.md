@@ -5,7 +5,7 @@
 
 This repo contains ...
 
-This repository is based on code from the
+This repository is loosely based on code from the
 [MMVAE repo](https://github.com/iffsid/mmvae).
 
 ### Modular Multimodal VAE Abstraction
@@ -20,5 +20,9 @@ import torch
 
 ### TO DO
 
-- Add abstract classes for each component with string representations.
-- Figure out how to enforce component compatibility.
+2. Figure out how to enforce component compatibility.
+3. Put datasets.py directly in src? -- would have to edit src/__init__.py
+4. Save/load models, pretrained models
+5. Marginal likelihood estimation
+6. Plotting
+7. MoE

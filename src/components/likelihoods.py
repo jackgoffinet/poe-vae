@@ -16,7 +16,7 @@ class AbstractLikelihood(torch.nn.Module):
 	def __init__(self):
 		super(AbstractLikelihood, self).__init__()
 
-	def forward(self, sample, likelihood_params):
+	def forward(self, sample, likelihood_params, nan_mask=None):
 		"""
 		Evaluate log probability of samples.
 
@@ -26,6 +26,8 @@ class AbstractLikelihood(torch.nn.Module):
 			Shape: [...]
 		likelihood_params : torch.Tensor
 			Shape: [...]
+		nan_mask : torch.Tensor or list of torch.Tensor
+			Indicates where data is missing.
 
 		Returns
 		-------
@@ -53,7 +55,7 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 		self.dim = -1
 
 
-	def forward(self, xs, decoder_xs):
+	def forward(self, xs, decoder_xs, nan_mask=None):
 		"""
 		Evaluate log probability of samples.
 
@@ -63,6 +65,8 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 			xs[modality] shape: [batch,x_dim]
 		decoder_xs : list of lists of single torch.Tensor
 			xs[modality][0] shape: [batch,n_samples,x_dim]
+		nan_mask : torch.Tensor or list of torch.Tensor
+			Indicates where data is missing.
 
 		Returns
 		-------
@@ -79,6 +83,11 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 			self.dist = Normal(loc, scale)
 		log_probs = [self.dist.log_prob(x.unsqueeze(1) - decoder_x) for \
 				x, decoder_x in zip(xs, decoder_xs)]
+		if nan_mask is not None:
+			temp_masks = [(~mask).float().unsqueeze(-1).unsqueeze(-1) \
+					for mask in nan_mask]
+			log_probs = [log_prob*temp_mask for log_prob,temp_mask in \
+					zip(log_probs,temp_masks)]
 		return [torch.sum(log_prob, dim=2) for log_prob in log_probs]
 
 

@@ -5,6 +5,8 @@ Different datasets are defined here.
 __date__ = "January 2021"
 
 
+import matplotlib.pyplot as plt
+plt.switch_backend('agg') # TO DO: plots
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -35,7 +37,7 @@ class MnistHalvesDataset(Dataset):
 	modality_dim = 392
 	vectorized_modalities = False
 
-	def __init__(self, data_fn, device, missingness=0.0, digit=2):
+	def __init__(self, data_fn, device, missingness=0.5, digit=2):
 		"""
 		MNIST data with the top and bottom halves treated as two modalities.
 

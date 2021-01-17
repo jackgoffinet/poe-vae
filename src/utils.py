@@ -12,6 +12,9 @@ Contains
 * make_decoder: function
 * make_likelihood: function
 * check_args: function
+* hash_json_str: function
+* generate: function
+* reconstruct: function
 
 """
 __date__ = "January 2021"
@@ -20,11 +23,16 @@ __date__ = "January 2021"
 import sys
 import torch
 from torch.utils.data import DataLoader
+from zlib import adler32
 
 from .components import DATASET_MAP, ENCODER_DECODER_MAP, \
 		VARIATIONAL_STRATEGY_MAP, VARIATIONAL_POSTERIOR_MAP, PRIOR_MAP, \
 		LIKELIHOOD_MAP, OBJECTIVE_MAP
 from.components.encoders_decoders import SplitLinearLayer, NetworkList
+
+
+DIR_LEN = 8 # for naming the logging directory
+IGNORED_KEYS = ['pre_trained'] # for hashing JSON strings
 
 
 
@@ -68,7 +76,7 @@ def make_datasets(args, train_ratio=0.8):
 	train_len = int(round(train_ratio * len(big_dataset)))
 	test_len = len(big_dataset) - train_len
 	dset_splits = \
-			torch.utils.data.random_split(big_dataset, [train_len,test_len])
+			torch.utils.data.random_split(big_dataset, [train_len,test_len]) # NOTE: HERE
 	return {'train': dset_splits[0], 'test': dset_splits[1]}
 
 
@@ -233,6 +241,51 @@ def check_args(args):
 	# Next, make sure the components are compatible.
 	# TO DO: finish this!
 	pass
+
+
+def hash_json_str(json_str):
+	"""Hash the JSON string to get a logging directory name."""
+	json_str = [line for line in json_str.split('\n') if \
+			not any(ignore_str in line for ignore_str in IGNORED_KEYS)]
+	json_str = '\n'.join(json_str)
+	exp_dir = str(adler32(str.encode(json_str))).zfill(DIR_LEN)[-DIR_LEN:]
+	return exp_dir
+
+
+def generate(vae, args, n_samples=9, decoder_noise=False):
+	"""
+	Generate data with a VAE.
+
+	Parameters
+	----------
+
+	Returns
+	-------
+
+	"""
+	vae.eval()
+	with torch.no_grad():
+		z_samples = vae.prior.rsample(n_samples)
+		likelihood_params = vae.decoder(z_samples)
+		# TO DO: HERE
+		raise NotImplementedError
+
+
+def reconstruct(vae, data, args, decoder_noise=False):
+	"""
+	Reconstruct data with a VAE.
+
+	Parameters
+	----------
+
+	Returns
+	-------
+
+	"""
+	vae.eval()
+	with torch.no_grad():
+		# TO DO: HERE
+		raise NotImplementedError
 
 
 
