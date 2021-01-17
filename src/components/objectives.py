@@ -19,8 +19,8 @@ class VaeObjective(torch.nn.Module):
 	def __init__(self, vae):
 		super(VaeObjective, self).__init__()
 		self.vae = vae
-		print("VaeObjective", sum(p.numel() for p in self.parameters() if p.requires_grad))
-		print("VaeObjective encoder", sum(p.numel() for p in self.vae.encoder.parameters() if p.requires_grad))
+		n_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
+		print("Trainabale parameters:", n_params)
 
 	def forward(self, x):
 		"""
@@ -60,13 +60,17 @@ class StandardElbo(VaeObjective):
 		# Make a variational posterior and sample.
 		z_samples, log_qz = self.vae.variational_posterior(*var_post_params)
 		# Evaluate prior.
-		log_pz = self.vae.prior(z_samples)
+		log_pz = self.vae.prior(z_samples).sum(dim=1)
+		# Evaluate KL.
+		kld = self.vae.variational_posterior.kld(self.vae.prior).sum(dim=1)
 		# Decode samples to get likelihood parameters.
 		likelihood_params = self.vae.decoder(z_samples)
-		# Evaluate likelihood.
-		log_like = self.vae.likelihood(x, likelihood_params)
+		# Evaluate likelihoods, sum over modalities.
+		log_likes = self.vae.likelihood(x, likelihood_params)
+		log_likes = sum(log_like.sum(dim=1) for log_like in log_likes)
 		# Evaluate loss.
-		loss = torch.mean(log_pz + log_like - kld)
+		assert len(log_pz.shape) == 1 and len(log_likes.shape) == 1 and len(kld.shape) == 1
+		loss = -torch.sum(log_pz + log_likes - kld)
 		return loss
 
 

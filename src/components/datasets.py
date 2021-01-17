@@ -10,8 +10,8 @@ import torch
 from torch.utils.data import Dataset
 
 
-MNIST_DEFAULT_FN = '/media/jackg/Jacks_Animal_Sounds/datasets/mnist_train.csv'
-MNIST_DEFAULT_FN = '/media/jackg/Jacks_Animal_Sounds/datasets/mnist_test.csv' # TEMP!!
+# MNIST_DEFAULT_FN = '/media/jackg/Jacks_Animal_Sounds/datasets/mnist_train.csv'
+MNIST_DEFAULT_FN = '/media/jackg/Jacks_Animal_Sounds/datasets/mnist_test.csv'
 print("Using temporary MNIST data!")
 
 
@@ -35,7 +35,7 @@ class MnistHalvesDataset(Dataset):
 	modality_dim = 392
 	vectorized_modalities = False
 
-	def __init__(self, data_fn, missingness=0.0, digit=2):
+	def __init__(self, data_fn, device, missingness=0.0, digit=2):
 		"""
 		MNIST data with the top and bottom halves treated as two modalities.
 
@@ -46,6 +46,7 @@ class MnistHalvesDataset(Dataset):
 		digit : int
 		"""
 		self.data_fn = data_fn
+		self.device = device
 		self.missingness = missingness
 		self.digit = digit
 		images, labels = load_mnist_data(data_fn)
@@ -68,7 +69,10 @@ class MnistHalvesDataset(Dataset):
 		return len(self.view_1)
 
 	def __getitem__(self, index):
-		return [self.view_1[index], self.view_2[index]]
+		return [ \
+				self.view_1[index].to(self.device),
+				self.view_2[index].to(self.device),
+		]
 
 
 
@@ -77,7 +81,7 @@ class MnistMcarDataset(Dataset):
 	modality_dim = 1
 	vectorized_modalities = True
 
-	def __init__(self, data_fn, missingness=0.0, digit=2):
+	def __init__(self, data_fn, device, missingness=0.0, digit=2):
 		"""
 		MNIST data with pixels missing completely at random.
 

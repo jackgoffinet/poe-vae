@@ -135,10 +135,10 @@ np.random.seed(args.seed)
 
 # Set up CUDA.
 args.cuda = not args.no_cuda and torch.cuda.is_available()
-device = torch.device("cuda" if args.cuda else "cpu")
+args.device = torch.device("cuda" if args.cuda else "cpu")
 
 
-# TO DO!!!!
+# TO DO:
 # Load pretrained models.
 
 
@@ -154,7 +154,7 @@ def train_epoch(objective, loader, optimizer, epoch, agg):
 	b_loss = 0
 	for i, batch in enumerate(loader):
 		optimizer.zero_grad()
-		loss = objective(model, batch.to(device))
+		loss = objective(batch)
 		loss.backward()
 		optimizer.step()
 		b_loss += loss.item()
@@ -173,7 +173,17 @@ def test_epoch(objective, loader, epoch, agg):
 	...
 	"""
 	objective.eval()
-	raise NotImplementedError
+	b_loss = 0
+	for i, batch in enumerate(loader):
+		optimizer.zero_grad()
+		loss = objective(batch)
+		loss.backward()
+		optimizer.step()
+		b_loss += loss.item()
+		# if args.print_freq > 0 and i % args.print_freq == 0:
+		# 	print("iteration {:04d}: loss: {:6.3f}".format(i, loss.item() / args.batch_size))
+	agg['test_loss'].append(b_loss / len(loader.dataset))
+	print('====> Epoch: {:03d} Test loss: {:.4f}'.format(epoch, agg['test_loss'][-1]))
 
 
 # def estimate_log_marginal(K):

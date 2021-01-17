@@ -27,12 +27,17 @@ class NetworkList(torch.nn.Module):
 		"""
 		Send `xs` through the networks.
 
+		NOTE: TO DO explain the if/else block
+
 		Parameters
 		----------
 		xs : list of torch.Tensor
 		"""
-		assert len(xs) == len(self.nets)
-		outputs = [net(x) for net, x in zip(self.nets, xs)]
+		if type(xs) == type([]):
+			assert len(xs) == len(self.nets)
+			outputs = [net(x) for net, x in zip(self.nets, xs)]
+		else:
+			outputs = [net(xs) for net in self.nets]
 		return outputs
 
 
@@ -56,7 +61,6 @@ class MLP(torch.nn.Module):
 			layers.append(activation())
 		layers.append(torch.nn.Linear(dims[-2], dims[-1]))
 		self.net = torch.nn.Sequential(*layers)
-		print("MLP", sum(p.numel() for p in self.parameters() if p.requires_grad))
 
 
 	def forward(self, x):
@@ -85,7 +89,6 @@ class SplitLinearLayer(torch.nn.Module):
 		super(SplitLinearLayer, self).__init__()
 		self.layers = [torch.nn.Linear(in_dim, out_dim) for out_dim in out_dims]
 		self.layers = torch.nn.ModuleList(self.layers)
-		print("SplitLinearLayer", sum(p.numel() for p in self.parameters() if p.requires_grad))
 
 	def forward(self, x):
 		"""

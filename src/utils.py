@@ -64,7 +64,7 @@ def make_datasets(args, train_ratio=0.8):
 	datasets : dict
 		Maps the keys 'train' and 'test' to respective Datasets.
 	"""
-	big_dataset = args.dataset(args.data_fn)
+	big_dataset = args.dataset(args.data_fn, args.device)
 	train_len = int(round(train_ratio * len(big_dataset)))
 	test_len = len(big_dataset) - train_len
 	dset_splits = \
@@ -113,7 +113,7 @@ def make_vae(args):
 			['decoder', make_decoder(args)],
 			['likelihood', args.likelihood(args.obs_std_dev)],
 	])
-	return vae
+	return vae.to(args.device)
 
 
 def make_objective(model, args):
@@ -129,7 +129,7 @@ def make_objective(model, args):
 	-------
 	.components.objectives.VaeObjective (subclasses torch.nn.Module)
 	"""
-	return args.objective(model)
+	return args.objective(model).to(args.device)
 
 
 def make_encoder(args):

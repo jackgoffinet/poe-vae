@@ -13,6 +13,7 @@ import torch
 
 
 class GaussianPoeStrategy(torch.nn.Module):
+	EPS = 1e-5
 
 	def __init__(self):
 		"""
@@ -33,15 +34,22 @@ class GaussianPoeStrategy(torch.nn.Module):
 		Parameters
 		----------
 		means : list of torch.Tensor
-			means[modality] = [...fill in dimensions...]
+			means[modality] shape: [batch, z_dim]
 		log_precisions : list of torch.Tensor
+			log_precisions[modality] shape: [batch, z_dim]
 
 		Returns
 		-------
 		mean : torch.Tensor
+			Shape: [batch, z_dim]
 		precision : torch.Tensor
+			Shape: [batch, z_dim]
 		"""
-		raise NotImplementedError
+		means = torch.stack(means, dim=1) # [b,m,z]
+		precisions = torch.stack(log_precisions, dim=1).exp() # [b,m,z]
+		precision = torch.sum(precisions, dim=1)
+		mean = torch.sum(means * precisions, dim=1) / (precision + self.EPS)
+		return mean.squeeze(1), precision.squeeze(1)
 
 
 
@@ -65,7 +73,7 @@ class GaussianMoeStrategy(torch.nn.Module):
 		means : list of torch.Tensor
 			means[modality] = [...fill in dimensions...]
 		log_precisions : list of torch.Tensor
-		
+
 		Returns
 		-------
 		"""
