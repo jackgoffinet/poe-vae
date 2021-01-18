@@ -22,7 +22,6 @@ import torch
 
 2. Figure out how to enforce component compatibility.
 3. Put datasets.py directly in src? -- would have to edit src/__init__.py
-4. Save/load models, pretrained models
 5. Marginal likelihood estimation
 6. Plotting
 7. MoE

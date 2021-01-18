@@ -6,9 +6,9 @@ which isn't anything more than a collection of various modular parts, and, given
 a batch of data, determine how to route the data through these parts to
 calculate a loss.
 
-Defining objectives as Modules instead of functions leaves the door open for the
-objectives to have trainable parameters and other state. But for the objectives
-so far, we don't need this.
+Representing objectives as torch.nn.Modules instead of functions leaves the door
+open for objectives to have trainable parameters and other state. For the
+objectives so far, though, we don't need this.
 """
 __date__ = "January 2021"
 
@@ -73,7 +73,7 @@ class StandardElbo(VaeObjective):
 		loss : torch.Tensor
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
-		nan_mask = _get_nan_mask(x)
+		nan_mask = get_nan_mask(x)
 		for i in range(len(x)):
 			x[i][nan_mask[i]] = 0.0
 		# Encode data.
@@ -168,7 +168,7 @@ class ArElbo(VaeObjective):
 
 
 
-def _get_nan_mask(xs):
+def get_nan_mask(xs):
 	"""Return a mask indicating which minibatch items are NaNs."""
 	if type(xs) == type([]):
 		return [torch.isnan(x[:,0]) for x in xs]

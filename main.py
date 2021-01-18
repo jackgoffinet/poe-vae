@@ -1,6 +1,10 @@
 """
 Main script: Train a model.
 
+Notes
+-----
+* Loading a model and continuing to train breaks the random seeds. Train in one
+  go for reproducability.
 """
 __date__ = "January 2021"
 
@@ -15,7 +19,7 @@ import sys
 import torch
 
 from src.utils import Logger, make_vae, make_datasets, make_dataloaders, \
-		check_args, make_objective, hash_json_str
+		check_args, make_objective, hash_json_str, generate, reconstruct
 from src.components import DATASET_KEYS, ENCODER_DECODER_KEYS, \
 		VARIATIONAL_STRATEGY_KEYS, VARIATIONAL_POSTERIOR_KEYS, PRIOR_KEYS, \
 		LIKELIHOOD_KEYS, OBJECTIVE_KEYS
@@ -25,6 +29,9 @@ LOGGING_DIR = 'logs'
 ARGS_FN = 'args.json'
 LOG_FN = 'run.log'
 STATE_FN = 'state.tar'
+GENERATE_FN = 'generations.pdf'
+TRAIN_RECONSTRUCT_FN = 'train_reconstructions.pdf'
+TEST_RECONSTRUCT_FN = 'test_reconstructions.pdf'
 
 INDENT = 4 # for pretty JSON
 
@@ -98,10 +105,15 @@ args_json_str = json.dumps(args.__dict__, sort_keys=True, indent=4)
 
 # Hash the JSON string to make a logging directory.
 exp_dir = hash_json_str(args_json_str)
+
+
 # Make various filenames.
 exp_dir = os.path.join(LOGGING_DIR, exp_dir)
 log_fn = os.path.join(exp_dir, LOG_FN)
 state_fn = os.path.join(exp_dir, STATE_FN)
+generate_fn = os.path.join(exp_dir, GENERATE_FN)
+train_reconstruct_fn = os.path.join(exp_dir, TRAIN_RECONSTRUCT_FN)
+test_reconstruct_fn = os.path.join(exp_dir, TEST_RECONSTRUCT_FN)
 
 
 # See if we've already started this experiment.
@@ -211,6 +223,28 @@ def get_batch_len(batch):
 	return len(batch) # vectorized modalities
 
 
+def make_plots(model, datasets, dataloaders):
+	# Plot generated data.
+	generated_data = generate(model, n_samples=5) # [m,b,s,x]
+	datasets['train'].dataset.plot(generated_data, generate_fn)
+	# Plot train reconstructions.
+	for batch in dataloaders['train']:
+		data = [b[:5] for b in batch]
+		recon_data = reconstruct(model, data) # [m,b,s,x]
+		break
+	data = np.array([g.detach().cpu().numpy() for g in data])
+	data = data.reshape(recon_data.shape) # [m,b,s,x]
+	datasets['train'].dataset.plot([data,recon_data], train_reconstruct_fn)
+	# Plot test reconstructions.
+	for batch in dataloaders['test']:
+		data = [b[:5] for b in batch]
+		recon_data = reconstruct(model, data) # [m,b,s,x]
+		break
+	data = np.array([g.detach().cpu().numpy() for g in data])
+	data = data.reshape(recon_data.shape) # [m,b,s,x]
+	datasets['test'].dataset.plot([data,recon_data], test_reconstruct_fn)
+
+
 # def estimate_log_marginal(K):
 # 	"""Compute an IWAE estimate of the log-marginal likelihood of test data."""
 # 	model.eval()
@@ -247,12 +281,10 @@ if __name__ == '__main__':
 	for epoch in range(prev_epochs + 1, prev_epochs + args.epochs + 1):
 		train_epoch(objective, dataloaders['train'], optimizer, epoch, agg)
 		test_epoch(objective, dataloaders['test'], epoch, agg)
-		# ...
-		# save_model(model, runPath + '/model.rar')
-		# save_vars(agg, runPath + '/losses.rar')
-		# model.generate(runPath, epoch)
-	# if args.logp:  # compute as tight a marginal likelihood as possible
+		# NOTE: HERE!
+	# if args.logp:
 		# estimate_log_marginal(5000)
+	make_plots(model, datasets, dataloaders)
 	save_state(objective, optimizer, prev_epochs + args.epochs)
 
 

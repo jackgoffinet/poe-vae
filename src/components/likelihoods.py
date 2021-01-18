@@ -16,7 +16,7 @@ class AbstractLikelihood(torch.nn.Module):
 	def __init__(self):
 		super(AbstractLikelihood, self).__init__()
 
-	def forward(self, sample, likelihood_params, nan_mask=None):
+	def forward(self, sample, like_params, nan_mask=None):
 		"""
 		Evaluate log probability of samples.
 
@@ -24,8 +24,8 @@ class AbstractLikelihood(torch.nn.Module):
 		----------
 		sample : torch.Tensor
 			Shape: [...]
-		likelihood_params : torch.Tensor
-			Shape: [...]
+		like_params : torch.Tensor
+			Likelihood parameters. Shape: [...]
 		nan_mask : torch.Tensor or list of torch.Tensor
 			Indicates where data is missing.
 
@@ -89,6 +89,30 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 			log_probs = [log_prob*temp_mask for log_prob,temp_mask in \
 					zip(log_probs,temp_masks)]
 		return [torch.sum(log_prob, dim=2) for log_prob in log_probs]
+
+
+	def mean(self, like_params, n_samples):
+		"""
+
+		Parameters
+		----------
+		like_params : list of list of torch.tensor
+			like_params[modality][param_num] shape: [batch,n_samples,z_dim]
+		"""
+		return [like_param[0] for like_param in like_params]
+
+
+	def rsample(self, like_params, n_samples):
+		"""
+		Test this!
+
+		"""
+		assert self.dist is not None
+		loc = torch.zeros(like_params[0].shape[-1], \
+				device=like_params[0].device)
+		scale = self.std_dev * torch.ones_like(loc)
+		self.dist = Normal(loc, scale)
+		return self.dist.rsample(sample_shape=(n_samples,)).transpose(0,1)
 
 
 

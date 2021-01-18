@@ -6,7 +6,7 @@ __date__ = "January 2021"
 
 
 import matplotlib.pyplot as plt
-plt.switch_backend('agg') # TO DO: plots
+plt.switch_backend('agg')
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -75,6 +75,31 @@ class MnistHalvesDataset(Dataset):
 				self.view_1[index].to(self.device),
 				self.view_2[index].to(self.device),
 		]
+
+	def plot(self, data, fn, grid_shape=None):
+		"""
+		TO DO: make this better!
+
+		data : numpy.ndarray
+			Shape: [m,b,samples,x_dim]
+		fn : str
+		"""
+		if type(data) != type([]):
+			data = [data]
+		data_cols = []
+		for data_col in data:
+			m, b, s, x_dim = data_col.shape
+			assert m == 2 and x_dim == 392
+			data_col = data_col.reshape(m,b*s,x_dim)
+			data_col = np.concatenate([data_col[0],data_col[1]], axis=-1)
+			data_col = data_col.reshape(-1,28)
+			data_cols.append(data_col)
+		data = np.concatenate(data_cols, axis=1)
+		plt.subplots(figsize=(2,6))
+		plt.imshow(data, cmap='Greys', vmin=-0.1,vmax=1.1)
+		plt.axis('off')
+		plt.savefig(fn)
+		plt.close('all')
 
 
 

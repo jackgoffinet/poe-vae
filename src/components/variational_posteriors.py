@@ -46,13 +46,13 @@ class AbstractVariationalPosterior(torch.nn.Module):
 		type_tuple = (type(self.dist), type(other.dist))
 		if type_tuple in torch.distributions.kl._KL_REGISTRY:
 			return torch.distributions.kl_divergence(self.dist, other.dist)
+		raise NotImplementedError
 
 
 
 class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 	n_parameters = 2 # mean and precision vectors: TO DO needed?
 	parameter_dim_func = lambda d: (d,d) # latent_dim -> parameter dimensions
-	# CONSTANT = -0.5 * np.log(2 * np.pi)
 
 
 	def __init__(self):
@@ -60,7 +60,7 @@ class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 		super(DiagonalGaussianPosterior, self).__init__()
 
 
-	def forward(self, mean, precision, n_samples=1):
+	def forward(self, mean, precision, n_samples=1, transpose=True):
 		"""
 		Produce reparamaterizable samples and evaluate their log probability.
 
@@ -88,7 +88,9 @@ class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 		self.dist = Normal(mean, std_dev)
 		samples = self.dist.rsample(sample_shape=(n_samples,))
 		log_prob = self.dist.log_prob(samples)
-		return samples.transpose(0,1), log_prob.transpose(0,1)
+		if transpose:
+			return samples.transpose(0,1), log_prob.transpose(0,1)
+		return samples, log_prob
 
 
 	def rsample(self):

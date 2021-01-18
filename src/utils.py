@@ -15,11 +15,13 @@ Contains
 * hash_json_str: function
 * generate: function
 * reconstruct: function
+* get_nan_mask: function
 
 """
 __date__ = "January 2021"
 
 
+import numpy as np
 import sys
 import torch
 from torch.utils.data import DataLoader
@@ -28,11 +30,11 @@ from zlib import adler32
 from .components import DATASET_MAP, ENCODER_DECODER_MAP, \
 		VARIATIONAL_STRATEGY_MAP, VARIATIONAL_POSTERIOR_MAP, PRIOR_MAP, \
 		LIKELIHOOD_MAP, OBJECTIVE_MAP
-from.components.encoders_decoders import SplitLinearLayer, NetworkList
+from .components.encoders_decoders import SplitLinearLayer, NetworkList
 
 
 DIR_LEN = 8 # for naming the logging directory
-IGNORED_KEYS = ['pre_trained'] # for hashing JSON strings
+IGNORED_KEYS = ['pre_trained', 'epochs'] # for hashing JSON strings
 
 
 
@@ -252,26 +254,35 @@ def hash_json_str(json_str):
 	return exp_dir
 
 
-def generate(vae, args, n_samples=9, decoder_noise=False):
+def generate(vae, n_samples=9, decoder_noise=False):
 	"""
 	Generate data with a VAE.
 
 	Parameters
 	----------
+	vae :
+	n_samples : int
+	decoder_noise : bool
 
 	Returns
 	-------
-
+	generated : numpy.ndarray
 	"""
 	vae.eval()
 	with torch.no_grad():
-		z_samples = vae.prior.rsample(n_samples)
-		likelihood_params = vae.decoder(z_samples)
-		# TO DO: HERE
-		raise NotImplementedError
+		z_samples = vae.prior.rsample(n_samples=n_samples) # [1,n,z]
+		print("z_samples", z_samples.shape)
+		like_params = vae.decoder(z_samples) # [m][param_num][1,n,z]
+		if decoder_noise:
+			assert hasattr(vae.likelihood, 'rsample')
+			generated = vae.likelihood.rsample(like_params, n_samples=n_samples)
+		else:
+			assert hasattr(vae.likelihood, 'mean')
+			generated = vae.likelihood.mean(like_params, n_samples=n_samples)
+	return np.array([g.detach().cpu().numpy() for g in generated])
 
 
-def reconstruct(vae, data, args, decoder_noise=False):
+def reconstruct(vae, data, decoder_noise=False):
 	"""
 	Reconstruct data with a VAE.
 
@@ -284,9 +295,31 @@ def reconstruct(vae, data, args, decoder_noise=False):
 	"""
 	vae.eval()
 	with torch.no_grad():
-		# TO DO: HERE
-		raise NotImplementedError
+		nan_mask = get_nan_mask(data)
+		for i in range(len(data)):
+			data[i][nan_mask[i]] = 0.0
+		var_dist_params = vae.encoder(data)
+		var_post_params = vae.variational_strategy(*var_dist_params, \
+				nan_mask=nan_mask)
+		z_samples, _ = vae.variational_posterior(*var_post_params, \
+				transpose=False)
+		print("z_samples", z_samples.shape)
+		like_params = vae.decoder(z_samples)
+		if decoder_noise:
+			assert hasattr(vae.likelihood, 'rsample')
+			generated = vae.likelihood.rsample(like_params, n_samples=1)
+		else:
+			assert hasattr(vae.likelihood, 'mean')
+			generated = vae.likelihood.mean(like_params, n_samples=1)
+	return np.array([g.detach().cpu().numpy() for g in generated])
 
+
+def get_nan_mask(xs):
+	"""Return a mask indicating which minibatch items are NaNs."""
+	if type(xs) == type([]):
+		return [torch.isnan(x[:,0]) for x in xs]
+	else:
+		raise NotImplementedError
 
 
 if __name__ == '__main__':
