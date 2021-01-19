@@ -102,6 +102,35 @@ class SplitLinearLayer(torch.nn.Module):
 
 
 
+class ModalityEmbeddingCatLayer(torch.nn.Module):
+
+	def __init__(self, n_modalities, feature_dim=8):
+		"""
+
+
+		"""
+		super(ModalityEmbeddingCatLayer, self).__init__()
+		self.embed = \
+				torch.nn.Parameter(torch.randn(1, n_modalities, feature_dim))
+
+
+	def forward(self, x):
+		"""
+		Send `x` through the network.
+
+		Parameters
+		----------
+		x : torch.Tensor
+		"""
+		print("forward x", x.shape)
+		assert len(x.shape) == 3
+		temp_embed = torch.tanh(self.embed)
+		temp_embed = temp_embed.expand(x.shape[0], -1, -1)
+		x = x.expand(-1, temp_embed.shape[1], -1)
+		return torch.cat([x,temp_embed], dim=2)
+
+
+
 if __name__ == '__main__':
 	pass
 

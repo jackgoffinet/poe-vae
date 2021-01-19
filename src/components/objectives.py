@@ -13,6 +13,7 @@ objectives so far, though, we don't need this.
 __date__ = "January 2021"
 
 
+import numpy as np
 import torch
 
 
@@ -74,29 +75,99 @@ class StandardElbo(VaeObjective):
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		nan_mask = get_nan_mask(x)
-		for i in range(len(x)):
-			x[i][nan_mask[i]] = 0.0
+		if type(x) == type([]): # not vectorized
+			for i in range(len(x)):
+				x[i][nan_mask[i]] = 0.0
+		else: # vectorized modalities
+			x[nan_mask.unsqueeze(-1)] = 0.0
+		# Encode.
+		z_samples, _, log_pz = self.encode(x, nan_mask) # [b,1,z], [b,1]
+		print("z_samples", z_samples.shape)
+		print("log_pz", log_pz.shape)
+		log_pz = log_pz.sum(dim=1) # [b] Sum over sample dimension.
+		# Evaluate KL.
+		kld = self.variational_posterior.kld(self.prior).sum(dim=1) # [b]
+		print("kld", kld.shape)
+		# Decode.
+		log_likes = self.decode(z_samples, x, nan_mask) # [b,1]
+		assert log_likes.shape[1] == 1
+		log_likes = log_likes.sum(dim=1)
+		# Evaluate loss.
+		assert len(log_pz.shape) == 1
+		assert len(log_likes.shape) == 1
+		assert len(kld.shape) == 1
+		loss = -torch.mean(log_pz + log_likes - kld)
+		return loss
+
+
+	def encode(self, x, nan_mask, n_samples=1):
+		"""
+		Encode data.
+
+		Parameters
+		----------
+		x : list of torch.Tensor
+		nan_mask : list of torch.Tensor
+
+		Returns
+		-------
+		...
+		"""
 		# Encode data.
-		var_dist_params = self.encoder(x)
+		var_dist_params = self.encoder(x) # [n_params][b,m,param_dim]
 		# Combine evidence.
 		var_post_params = self.variational_strategy(*var_dist_params, \
 				nan_mask=nan_mask)
 		# Make a variational posterior and sample.
-		z_samples, log_qz = self.variational_posterior(*var_post_params)
+		z_samples, log_qz = self.variational_posterior(*var_post_params, \
+				n_samples=n_samples)
 		# Evaluate prior.
-		log_pz = self.prior(z_samples).sum(dim=1)
-		# Evaluate KL.
-		kld = self.variational_posterior.kld(self.prior).sum(dim=1)
+		log_pz = self.prior(z_samples)
+		return z_samples, log_qz, log_pz
+
+
+	def decode(self, z_samples, x, nan_mask):
+		"""
+
+		Parameters
+		----------
+		z_samples : torch.Tensor
+			Shape: [batch,sampls,z_dim]
+
+		"""
 		# Decode samples to get likelihood parameters.
-		likelihood_params = self.decoder(z_samples)
+		likelihood_params = self.decoder(z_samples) # [m][l_params][b,s,x]
 		# Evaluate likelihoods, sum over modalities.
 		log_likes = self.likelihood(x, likelihood_params, \
 				nan_mask=nan_mask)
-		log_likes = sum(log_like.sum(dim=1) for log_like in log_likes)
-		# Evaluate loss.
-		assert len(log_pz.shape) == 1 and len(log_likes.shape) == 1 and len(kld.shape) == 1
-		loss = -torch.mean(log_pz + log_likes - kld)
-		return loss
+		log_likes = sum(log_like for log_like in log_likes)
+		return log_likes
+
+
+	def estimate_log_marginal(self, x, k=1000):
+		"""
+
+		Parameters
+		----------
+		x : list of torch.Tensor
+		k : int
+		 	Number of importance-weighted samples.
+
+		Returns
+		-------
+		est_log_m : torch.Tensor
+			Estimated log marginal. Shape: [b]
+		"""
+		# Get missingness pattern, replace with zeros to prevent NaN gradients.
+		nan_mask = get_nan_mask(x)
+		for i in range(len(x)):
+			x[i][nan_mask[i]] = 0.0
+		# [b,k,z], [b,k], [b,k]
+		z_samples, log_qz, log_pz = self.encode(x, nan_mask, n_samples=k)
+		log_likes = self.decode(z_samples, x, nan_mask) # [b,k]
+		est_log_m = torch.logsumexp(log_pz - log_qz + log_likes - np.log(k), \
+				dim=1)
+		return est_log_m
 
 
 
@@ -173,7 +244,7 @@ def get_nan_mask(xs):
 	if type(xs) == type([]):
 		return [torch.isnan(x[:,0]) for x in xs]
 	else:
-		raise NotImplementedError
+		return torch.isnan(xs[:,:,0]) # [b,m]
 
 
 

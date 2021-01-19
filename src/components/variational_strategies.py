@@ -70,10 +70,18 @@ class GaussianPoeStrategy(AbstractVariationalStrategy):
 		precision : torch.Tensor
 			Shape: [batch, z_dim]
 		"""
-		means = torch.stack(means, dim=1) # [b,m,z]
-		precisions = torch.stack(log_precisions, dim=1).exp() # [b,m,z]
+		list_flag = type(means) == type([]) # not vectorized
+		if list_flag:
+			means = torch.stack(means, dim=1) # [b,m,z]
+			precisions = torch.stack(log_precisions, dim=1).exp() # [b,m,z]
+		else:
+			precisions = log_precisions.exp()
 		if nan_mask is not None:
-			temp_mask = (~torch.stack(nan_mask, dim=1)).float().unsqueeze(-1)
+			if list_flag:
+				temp_mask = torch.stack(nan_mask, dim=1)
+			else:
+				temp_mask = nan_mask
+			temp_mask = (~temp_mask).float().unsqueeze(-1)
 			precisions = precisions * temp_mask
 		precision = torch.sum(precisions, dim=1)
 		mean = torch.sum(means * precisions, dim=1) / (precision + self.EPS)

@@ -30,7 +30,8 @@ from zlib import adler32
 from .components import DATASET_MAP, ENCODER_DECODER_MAP, \
 		VARIATIONAL_STRATEGY_MAP, VARIATIONAL_POSTERIOR_MAP, PRIOR_MAP, \
 		LIKELIHOOD_MAP, OBJECTIVE_MAP
-from .components.encoders_decoders import SplitLinearLayer, NetworkList
+from .components.encoders_decoders import SplitLinearLayer, NetworkList, \
+		ModalityEmbeddingCatLayer
 
 
 DIR_LEN = 8 # for naming the logging directory
@@ -190,14 +191,23 @@ def _make_net_helper(args, in_dim, output_dims, net_class):
 
 	Parameters
 	----------
-	TO DO
+	args : argparse.Namespace
+	in_dim : int
+	output_dims : int
+	net_class : ...
 	"""
 	# Collect parameters.
 	n_modalities = args.dataset.n_modalities
-	vectorized_modalities = args.dataset.vectorized_modalities
 	# Make layers.
-	if vectorized_modalities:
-		raise NotImplementedError
+	if args.vectorized:
+		# First make the modality embedding.
+		embed_layer = ModalityEmbeddingCatLayer(n_modalities, args.m_dim)
+		# Then make the rest of the layers.
+		dims = [in_dim+args.m_dim] + \
+						[args.hidden_layer_dim] * args.num_hidden_layers
+		encoder = net_class(dims)
+		last_layer = SplitLinearLayer(args.hidden_layer_dim, output_dims) # MAKE VECTORIZED!
+		return torch.nn.Sequential(embed_layer, encoder, last_layer)
 	else:
 		# Make everything up to the last layer.
 		dims = [in_dim] + [args.hidden_layer_dim]*args.num_hidden_layers
@@ -241,6 +251,7 @@ def check_args(args):
 	args.likelihood = LIKELIHOOD_MAP[args.likelihood]
 	args.objective = OBJECTIVE_MAP[args.objective]
 	# Next, make sure the components are compatible.
+	args.vectorized = args.dataset.vectorized_modalities
 	# TO DO: finish this!
 	pass
 

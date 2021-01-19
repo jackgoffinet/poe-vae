@@ -22,6 +22,5 @@ import torch
 
 2. Figure out how to enforce component compatibility.
 3. Put datasets.py directly in src? -- would have to edit src/__init__.py
-5. Marginal likelihood estimation
-6. Plotting
 7. MoE
+8. Vectorized modalities, MCAR dataset

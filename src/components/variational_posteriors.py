@@ -78,7 +78,7 @@ class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 			Samples from the distribution. Shape: [batch,n_samples,z_dim]
 		log_prob : torch.Tensor
 			Log probability of samples under the distribution.
-			Shape: [batch,n_samples,z_dim]
+			Shape: [batch,n_samples]
 		"""
 		assert mean.shape == precision.shape, \
 				"{} != {}".format(mean.shape,precision.shape)
@@ -87,10 +87,10 @@ class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 		std_dev = torch.sqrt(torch.reciprocal(precision))
 		self.dist = Normal(mean, std_dev)
 		samples = self.dist.rsample(sample_shape=(n_samples,))
-		log_prob = self.dist.log_prob(samples)
+		log_prob = self.dist.log_prob(samples).sum(dim=2) # Sum over latent dim
 		if transpose:
 			return samples.transpose(0,1), log_prob.transpose(0,1)
-		return samples, log_prob
+		return samples, log_prob #.sum(dim=2)
 
 
 	def rsample(self):

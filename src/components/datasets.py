@@ -37,7 +37,7 @@ class MnistHalvesDataset(Dataset):
 	modality_dim = 392
 	vectorized_modalities = False
 
-	def __init__(self, data_fn, device, missingness=0.5, digit=2):
+	def __init__(self, data_fn, device, missingness=0.5, digits=(2,)):
 		"""
 		MNIST data with the top and bottom halves treated as two modalities.
 
@@ -45,14 +45,15 @@ class MnistHalvesDataset(Dataset):
 		----------
 		data_fn : str
 		missingness : float
-		digit : int
+		digit : tuple of ints
 		"""
 		self.data_fn = data_fn
 		self.device = device
 		self.missingness = missingness
-		self.digit = digit
+		self.digits = digits
 		images, labels = load_mnist_data(data_fn)
-		idx = np.argwhere(labels == digit).flatten()
+		idx = [np.argwhere(labels == digit).flatten() for digit in digits]
+		idx = np.concatenate(idx)
 		images = images[idx]
 		images = images[np.random.permutation(images.shape[0])]
 		n, d = images.shape[0], images.shape[1]//2
@@ -108,7 +109,7 @@ class MnistMcarDataset(Dataset):
 	modality_dim = 1
 	vectorized_modalities = True
 
-	def __init__(self, data_fn, device, missingness=0.0, digit=2):
+	def __init__(self, data_fn, device, missingness=0.5, digits=(2,4,6)):
 		"""
 		MNIST data with pixels missing completely at random.
 
@@ -116,15 +117,29 @@ class MnistMcarDataset(Dataset):
 		----------
 		data_fn : str
 		missingness : float
-		digit : int
+		digits : tuple of ints
 		"""
-		raise NotImplementedError
+		self.data_fn = data_fn
+		self.device = device
+		self.missingness = missingness
+		self.digits = digits
+		images, labels = load_mnist_data(data_fn)
+		idx = [np.argwhere(labels == digit).flatten() for digit in digits]
+		idx = np.concatenate(idx)
+		images = images[idx]
+		images = images[np.random.permutation(images.shape[0])]
+		n, d = images.shape[0], images.shape[1]
+		if missingness > 0.0:
+			num_missing = int(round(missingness * d))
+			idx = np.random.randint(d, size=(n,num_missing))
+			images[idx] = np.nan
+		self.images = torch.tensor(images, dtype=torch.float).unsqueeze(-1)
 
 	def __len__(self):
-		return 0
+		return len(self.images)
 
 	def __getitem__(self, index):
-		return None
+		return self.images[index].to(self.device)
 
 
 

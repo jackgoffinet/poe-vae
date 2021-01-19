@@ -16,6 +16,7 @@ import json
 import numpy as np
 import os
 import sys
+from time import perf_counter
 import torch
 
 from src.utils import Logger, make_vae, make_datasets, make_dataloaders, \
@@ -77,7 +78,9 @@ parser.add_argument('--batch-size', type=int, default=256, metavar='N',
 parser.add_argument('--epochs', type=int, default=10, metavar='E',
 					help='number of epochs to train (default: 10)')
 parser.add_argument('--latent-dim', type=int, default=20, metavar='L',
-					help='latent dimensionality (default: 20)')
+					help='latent dimension (default: 20)')
+parser.add_argument('--m-dim', type=int, default=8, metavar='K',
+					help='modality embedding dimension (default: 8)')
 parser.add_argument('--obs-std-dev', type=float, default=0.1, metavar='L',
 					help='Observation standard deviation (default: 0.1)')
 parser.add_argument('--num-hidden-layers', type=int, default=1, metavar='H',
@@ -245,17 +248,25 @@ def make_plots(model, datasets, dataloaders):
 	datasets['test'].dataset.plot([data,recon_data], test_reconstruct_fn)
 
 
-# def estimate_log_marginal(K):
-# 	"""Compute an IWAE estimate of the log-marginal likelihood of test data."""
-# 	model.eval()
-# 	marginal_loglik = 0
-# 	with torch.no_grad():
-# 		for dataT in test_loader:
-# 			data = unpack_data(dataT, device=device)
-# 			marginal_loglik += -t_objective(model, data, K).item()
-#
-# 	marginal_loglik /= len(test_loader.dataset)
-# 	print('Marginal Log Likelihood (IWAE, K = {}): {:.4f}'.format(K, marginal_loglik))
+def estimate_log_marginal(objective, loader, k=1000, reduction='mean'):
+	"""
+	Simple log marginal estimation.
+
+	Take the approximate posterior as a proposal distribution, do an
+	importance-weighted estimate.
+	"""
+	assert reduction in ['sum', 'mean']
+	batch_res = []
+	with torch.no_grad():
+		for i, batch in enumerate(loader):
+			log_m = objective.estimate_log_marginal(batch)
+			batch_res.append(log_m)
+		batch_res = torch.cat(batch_res, dim=0).detach().cpu().numpy()
+	assert len(batch_res.shape) == 1 # dataset size
+	if reduction == 'sum':
+		return np.sum(batch_res)
+	return np.mean(batch_res)
+
 
 
 
@@ -283,7 +294,14 @@ if __name__ == '__main__':
 		test_epoch(objective, dataloaders['test'], epoch, agg)
 		# NOTE: HERE!
 	# if args.logp:
-		# estimate_log_marginal(5000)
+	tic = perf_counter()
+	log_p = estimate_log_marginal(objective, dataloaders['test'])
+	toc = perf_counter()
+	print("test", log_p, round(toc-tic,5)*1e3)
+	tic = perf_counter()
+	log_p = estimate_log_marginal(objective, dataloaders['train'])
+	toc = perf_counter()
+	print("train", log_p, round(toc-tic,5)*1e3)
 	make_plots(model, datasets, dataloaders)
 	save_state(objective, optimizer, prev_epochs + args.epochs)
 
