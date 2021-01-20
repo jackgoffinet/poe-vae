@@ -1,5 +1,6 @@
 """
 Import different VAE components, map component names to classes.
+
 """
 __date__ = "January 2021"
 

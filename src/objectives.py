@@ -67,7 +67,8 @@ class StandardElbo(VaeObjective):
 
 		Parameters
 		----------
-		x : list of torch.Tensor
+		x : list of torch.Tensor or torch.Tensor
+			Shape: [modalities][batch,m_dim] or [batch,modalities,m_dim]
 
 		Returns
 		-------
@@ -75,23 +76,21 @@ class StandardElbo(VaeObjective):
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		nan_mask = get_nan_mask(x)
-		if type(x) == type([]): # not vectorized
+		if type(x) == type([]): # not vectorized, shape: [m][batch]
 			for i in range(len(x)):
 				x[i][nan_mask[i]] = 0.0
-		else: # vectorized modalities
+		else: # vectorized modalities, shape: [batch,m]
 			x[nan_mask.unsqueeze(-1)] = 0.0
 		# Encode.
-		z_samples, _, log_pz = self.encode(x, nan_mask) # [b,1,z], [b,1]
-		print("z_samples", z_samples.shape)
-		print("log_pz", log_pz.shape)
+		z_samples, log_qz, log_pz = self.encode(x, nan_mask) # [b,s,z], [b,s]
+		assert log_pz.shape[1] == 1 # assert single sample
 		log_pz = log_pz.sum(dim=1) # [b] Sum over sample dimension.
 		# Evaluate KL.
 		kld = self.variational_posterior.kld(self.prior).sum(dim=1) # [b]
-		print("kld", kld.shape)
 		# Decode.
 		log_likes = self.decode(z_samples, x, nan_mask) # [b,1]
-		assert log_likes.shape[1] == 1
-		log_likes = log_likes.sum(dim=1)
+		# assert log_likes.shape[1] == 1
+		log_likes = log_likes.sum(dim=1) # sum over sample dimension
 		# Evaluate loss.
 		assert len(log_pz.shape) == 1
 		assert len(log_likes.shape) == 1
@@ -106,7 +105,8 @@ class StandardElbo(VaeObjective):
 
 		Parameters
 		----------
-		x : list of torch.Tensor
+		x : list of torch.Tensor or torch.Tensor
+			Shape: [modalities][batch,m_dim] or [batch,modalities,m_dim]
 		nan_mask : list of torch.Tensor
 
 		Returns
@@ -132,19 +132,34 @@ class StandardElbo(VaeObjective):
 		Parameters
 		----------
 		z_samples : torch.Tensor
-			Shape: [batch,sampls,z_dim]
+			Shape: [batch,n_samples,z_dim]
+		x : list of torch.Tensor or torch.Tensor
+			Shape: [modalities][batch,m_dim] or [batch,modalities,m_dim]
 
+		Returns
+		-------
+		log_likes : torch.Tensor
+			Shape: [batch,samples]
 		"""
 		# Decode samples to get likelihood parameters.
-		likelihood_params = self.decoder(z_samples) # [m][l_params][b,s,x]
+		# likelihood_params shape:
+		# [n_params][b,m,m_dim] if vectorized, otherwise [m][n_params][b,s,x]
+		likelihood_params = self.decoder(z_samples)
 		# Evaluate likelihoods, sum over modalities.
 		log_likes = self.likelihood(x, likelihood_params, \
 				nan_mask=nan_mask)
-		log_likes = sum(log_like for log_like in log_likes)
+		# # TEMPORARY CHECK
+		# temp = torch.sum(nan_mask.float().unsqueeze(1)*log_likes)
+		# assert temp == 0.0, "{:.4f}".format()
+		# Sum over modality dimension.
+		if type(log_likes) == type([]): # not vectorized
+			log_likes = sum(log_like for log_like in log_likes)
+		else:
+			log_likes = torch.sum(log_likes, dim=2)
 		return log_likes
 
 
-	def estimate_log_marginal(self, x, k=1000):
+	def estimate_marginal_log_like(self, x, k=1000, keepdim=False):
 		"""
 
 		Parameters
@@ -152,19 +167,27 @@ class StandardElbo(VaeObjective):
 		x : list of torch.Tensor
 		k : int
 		 	Number of importance-weighted samples.
+		keepdim : bool
+			Keep the sample dimension.
 
 		Returns
 		-------
 		est_log_m : torch.Tensor
-			Estimated log marginal. Shape: [b]
+			If `keepdim`: Likelihoods of all samples. Shape: [b,k]
+			Else: Estimated log marginal. Shape: [b]
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		nan_mask = get_nan_mask(x)
-		for i in range(len(x)):
-			x[i][nan_mask[i]] = 0.0
+		if type(x) == type([]): # not vectorized, shape: [m][batch]
+			for i in range(len(x)):
+				x[i][nan_mask[i]] = 0.0
+		else: # vectorized modalities, shape: [batch,m]
+			x[nan_mask.unsqueeze(-1)] = 0.0
 		# [b,k,z], [b,k], [b,k]
 		z_samples, log_qz, log_pz = self.encode(x, nan_mask, n_samples=k)
 		log_likes = self.decode(z_samples, x, nan_mask) # [b,k]
+		if keepdim: # Keep the sample dimension.
+			return log_pz - log_qz + log_likes
 		est_log_m = torch.logsumexp(log_pz - log_qz + log_likes - np.log(k), \
 				dim=1)
 		return est_log_m
@@ -245,7 +268,6 @@ def get_nan_mask(xs):
 		return [torch.isnan(x[:,0]) for x in xs]
 	else:
 		return torch.isnan(xs[:,:,0]) # [b,m]
-
 
 
 if __name__ == '__main__':

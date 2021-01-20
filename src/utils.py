@@ -27,11 +27,11 @@ import torch
 from torch.utils.data import DataLoader
 from zlib import adler32
 
-from .components import DATASET_MAP, ENCODER_DECODER_MAP, \
+from .param_maps import DATASET_MAP, ENCODER_DECODER_MAP, \
 		VARIATIONAL_STRATEGY_MAP, VARIATIONAL_POSTERIOR_MAP, PRIOR_MAP, \
 		LIKELIHOOD_MAP, OBJECTIVE_MAP
-from .components.encoders_decoders import SplitLinearLayer, NetworkList, \
-		ModalityEmbeddingCatLayer
+from .encoders_decoders import SplitLinearLayer, NetworkList, \
+		EncoderModalityEmbedding, DecoderModalityEmbedding
 
 
 DIR_LEN = 8 # for naming the logging directory
@@ -160,8 +160,15 @@ def make_encoder(args):
 	in_dim = args.dataset.modality_dim
 	z_dim = args.latent_dim
 	output_dims = args.variational_posterior.parameter_dim_func(z_dim)
-	net_class = args.encoder
-	return _make_net_helper(args, in_dim, output_dims, net_class)
+	return args.dataset.encoder_c( \
+			args.num_hidden_layers,
+			args.hidden_layer_dim,
+			output_dims,
+			args.m_dim,
+	)
+
+	# net_class = args.encoder
+	# return _make_net_helper(args, in_dim, output_dims, net_class, True)
 
 
 def make_decoder(args):
@@ -178,14 +185,22 @@ def make_decoder(args):
 	-------
 	decoder : .components.encoders_decoders.NetworkList (torch.nn.Module)
 	"""
-	in_dim = args.latent_dim
+	# in_dim = args.latent_dim
 	modality_dim = args.dataset.modality_dim
 	output_dims = args.likelihood.parameter_dim_func(modality_dim)
-	net_class = args.decoder
-	return _make_net_helper(args, in_dim, output_dims, net_class)
+	return args.dataset.decoder_c( \
+		args.num_hidden_layers,
+		args.hidden_layer_dim,
+		output_dims,
+		args.latent_dim,
+		args.m_dim,
+	)
+
+	# net_class = args.decoder
+	# return _make_net_helper(args, in_dim, output_dims, net_class, False)
 
 
-def _make_net_helper(args, in_dim, output_dims, net_class):
+def _make_net_helper(args, in_dim, output_dims, net_class, is_encoder):
 	"""
 	Helper for `make_encoder` and `make_decoder`.
 
@@ -195,13 +210,17 @@ def _make_net_helper(args, in_dim, output_dims, net_class):
 	in_dim : int
 	output_dims : int
 	net_class : ...
+	is_encoder : bool
 	"""
 	# Collect parameters.
 	n_modalities = args.dataset.n_modalities
 	# Make layers.
 	if args.vectorized:
 		# First make the modality embedding.
-		embed_layer = ModalityEmbeddingCatLayer(n_modalities, args.m_dim)
+		if is_encoder:
+			embed_layer = EncoderModalityEmbedding(n_modalities, args.m_dim)
+		else:
+			embed_layer = DecoderModalityEmbedding(n_modalities, args.m_dim)
 		# Then make the rest of the layers.
 		dims = [in_dim+args.m_dim] + \
 						[args.hidden_layer_dim] * args.num_hidden_layers
@@ -330,7 +349,7 @@ def get_nan_mask(xs):
 	if type(xs) == type([]):
 		return [torch.isnan(x[:,0]) for x in xs]
 	else:
-		raise NotImplementedError
+		return torch.isnan(xs[:,:,0]) # [b,m]
 
 
 if __name__ == '__main__':

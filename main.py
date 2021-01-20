@@ -21,7 +21,7 @@ import torch
 
 from src.utils import Logger, make_vae, make_datasets, make_dataloaders, \
 		check_args, make_objective, hash_json_str, generate, reconstruct
-from src.components import DATASET_KEYS, ENCODER_DECODER_KEYS, \
+from src.param_maps import DATASET_KEYS, ENCODER_DECODER_KEYS, \
 		VARIATIONAL_STRATEGY_KEYS, VARIATIONAL_POSTERIOR_KEYS, PRIOR_KEYS, \
 		LIKELIHOOD_KEYS, OBJECTIVE_KEYS
 
@@ -30,9 +30,7 @@ LOGGING_DIR = 'logs'
 ARGS_FN = 'args.json'
 LOG_FN = 'run.log'
 STATE_FN = 'state.tar'
-GENERATE_FN = 'generations.pdf'
-TRAIN_RECONSTRUCT_FN = 'train_reconstructions.pdf'
-TEST_RECONSTRUCT_FN = 'test_reconstructions.pdf'
+AGG_FN = 'agg.pt'
 
 INDENT = 4 # for pretty JSON
 
@@ -79,20 +77,20 @@ parser.add_argument('--epochs', type=int, default=10, metavar='E',
 					help='number of epochs to train (default: 10)')
 parser.add_argument('--latent-dim', type=int, default=20, metavar='L',
 					help='latent dimension (default: 20)')
-parser.add_argument('--m-dim', type=int, default=8, metavar='K',
+parser.add_argument('--m-dim', type=int, default=4, metavar='K',
 					help='modality embedding dimension (default: 8)')
 parser.add_argument('--obs-std-dev', type=float, default=0.1, metavar='L',
 					help='Observation standard deviation (default: 0.1)')
-parser.add_argument('--num-hidden-layers', type=int, default=1, metavar='H',
+parser.add_argument('--num-hidden-layers', type=int, default=2, metavar='H',
 					help='number of hidden layers (default: 1)')
 parser.add_argument('--hidden-layer-dim', type=int, default=64, metavar='H',
 					help='hidden layer dimension (default: 64)')
 parser.add_argument('--pre-trained', action='store_true', default=False,
 					help='load a saved model')
-parser.add_argument('--logp', action='store_true', default=False,
-					help='estimate marginal likelihood on completion')
-parser.add_argument('--print-freq', type=int, default=0, metavar='f',
-					help='frequency with which to print stats (default: 0)')
+parser.add_argument('--mll-freq', type=int, default=100,
+					help='marginal likelihood estimation frequency')
+parser.add_argument('--test-freq', type=int, default=10,
+					help='test set estimation frequency')
 parser.add_argument('--no-cuda', action='store_true', default=False,
 					help='disable CUDA use')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -108,15 +106,14 @@ args_json_str = json.dumps(args.__dict__, sort_keys=True, indent=4)
 
 # Hash the JSON string to make a logging directory.
 exp_dir = hash_json_str(args_json_str)
+print("exp_dir:", exp_dir)
 
 
 # Make various filenames.
 exp_dir = os.path.join(LOGGING_DIR, exp_dir)
 log_fn = os.path.join(exp_dir, LOG_FN)
 state_fn = os.path.join(exp_dir, STATE_FN)
-generate_fn = os.path.join(exp_dir, GENERATE_FN)
-train_reconstruct_fn = os.path.join(exp_dir, TRAIN_RECONSTRUCT_FN)
-test_reconstruct_fn = os.path.join(exp_dir, TEST_RECONSTRUCT_FN)
+agg_fn = os.path.join(exp_dir, AGG_FN)
 
 
 # See if we've already started this experiment.
@@ -124,7 +121,7 @@ if args.pre_trained:
 	assert os.path.exists(exp_dir)
 else:
 	if os.path.exists(exp_dir):
-		_ = input("Experiment path already exists! Continue? ")
+		# _ = input("Experiment path already exists! Continue? ")
 		try:
 			os.remove(log_fn)
 		except FileNotFoundError:
@@ -178,6 +175,7 @@ def train_epoch(objective, loader, optimizer, epoch, agg):
 		optimizer.step()
 		b_loss += loss.item() * get_batch_len(batch)
 	agg['train_loss'].append(b_loss / len(loader.dataset))
+	agg['train_epoch'].append(epoch)
 	print('====> Epoch: {:03d} Train loss: {:.4f}'.format(epoch, agg['train_loss'][-1]))
 
 
@@ -198,6 +196,7 @@ def test_epoch(objective, loader, epoch, agg):
 		optimizer.step()
 		b_loss += loss.item() * get_batch_len(batch)
 	agg['test_loss'].append(b_loss / len(loader.dataset))
+	agg['test_epoch'].append(epoch)
 	print('====> Epoch: {:03d} Test loss: {:.4f}'.format(epoch, agg['test_loss'][-1]))
 
 
@@ -226,40 +225,40 @@ def get_batch_len(batch):
 	return len(batch) # vectorized modalities
 
 
-def make_plots(model, datasets, dataloaders):
-	# Plot generated data.
-	generated_data = generate(model, n_samples=5) # [m,b,s,x]
-	datasets['train'].dataset.plot(generated_data, generate_fn)
-	# Plot train reconstructions.
-	for batch in dataloaders['train']:
-		data = [b[:5] for b in batch]
-		recon_data = reconstruct(model, data) # [m,b,s,x]
-		break
-	data = np.array([g.detach().cpu().numpy() for g in data])
-	data = data.reshape(recon_data.shape) # [m,b,s,x]
-	datasets['train'].dataset.plot([data,recon_data], train_reconstruct_fn)
-	# Plot test reconstructions.
-	for batch in dataloaders['test']:
-		data = [b[:5] for b in batch]
-		recon_data = reconstruct(model, data) # [m,b,s,x]
-		break
-	data = np.array([g.detach().cpu().numpy() for g in data])
-	data = data.reshape(recon_data.shape) # [m,b,s,x]
-	datasets['test'].dataset.plot([data,recon_data], test_reconstruct_fn)
-
-
-def estimate_log_marginal(objective, loader, k=1000, reduction='mean'):
+def estimate_marginal_log_like(objective, loader, k=1000, mini_k=50, \
+	reduction='mean'):
 	"""
 	Simple log marginal estimation.
 
 	Take the approximate posterior as a proposal distribution, do an
 	importance-weighted estimate.
+
+	TO DO: do this in batches
+
+	Parameters
+	----------
+	objective :
+	loader :
+	k : int
+	mini_k : int
+	reduction : {'mean', 'sum'}
+
+	Returns
+	-------
+	est_mll : float
 	"""
+	assert k % mini_k == 0, "k should be divisible by mini_k"
 	assert reduction in ['sum', 'mean']
+	num_inner_batches = k // mini_k
 	batch_res = []
 	with torch.no_grad():
 		for i, batch in enumerate(loader):
-			log_m = objective.estimate_log_marginal(batch)
+			inner_batch_res = []
+			for j in range(num_inner_batches):
+				log_l = objective.estimate_marginal_log_like(batch, k=mini_k, keepdim=True)
+				inner_batch_res.append(log_l)
+			log_m = torch.cat(inner_batch_res, dim=1) - np.log(k)
+			log_m = torch.logsumexp(log_m, dim=1)
 			batch_res.append(log_m)
 		batch_res = torch.cat(batch_res, dim=0).detach().cpu().numpy()
 	assert len(batch_res.shape) == 1 # dataset size
@@ -268,42 +267,70 @@ def estimate_log_marginal(objective, loader, k=1000, reduction='mean'):
 	return np.mean(batch_res)
 
 
+def mll_helper(bjective, dataloaders, epoch, agg):
+	"""Estimate marginal log likelihoods."""
+	tic = perf_counter()
+	mll = estimate_marginal_log_like(objective, dataloaders['test'])
+	toc = perf_counter()
+	agg['test_mll'].append(mll)
+	agg['test_mll_epoch'].append(epoch)
+	print("Test MLL: ", mll, ", time:", round(toc-tic,2))
+	tic = perf_counter()
+	mll = estimate_marginal_log_like(objective, dataloaders['train'])
+	toc = perf_counter()
+	agg['train_mll'].append(mll)
+	agg['train_mll_epoch'].append(epoch)
+	print("Train MLL time:", mll, ", time:", round(toc-tic,2))
+
+
+def save_aggregator(agg):
+	"""Save the data aggregrator."""
+	torch.save(agg, agg_fn)
+
 
 
 if __name__ == '__main__':
 	# Make Datasets.
 	datasets = make_datasets(args)
+
 	# Make Dataloaders.
 	dataloaders = make_dataloaders(datasets, args.batch_size)
+
 	# Make the VAE.
 	model = make_vae(args)
+
 	# Make the objective.
 	objective = make_objective(model, args)
+
 	# Make the optimizer.
 	optimizer = torch.optim.Adam(objective.parameters(), lr=1e-3)
+
 	# Load pretrained models.
 	if args.pre_trained:
 		prev_epochs = load_state(objective, optimizer)
 	else:
 		prev_epochs = 0
+
 	# Set up a data aggregrator.
 	agg = defaultdict(list)
+
 	# Enter a train loop.
 	for epoch in range(prev_epochs + 1, prev_epochs + args.epochs + 1):
 		train_epoch(objective, dataloaders['train'], optimizer, epoch, agg)
-		test_epoch(objective, dataloaders['test'], epoch, agg)
-		# NOTE: HERE!
-	# if args.logp:
-	tic = perf_counter()
-	log_p = estimate_log_marginal(objective, dataloaders['test'])
-	toc = perf_counter()
-	print("test", log_p, round(toc-tic,5)*1e3)
-	tic = perf_counter()
-	log_p = estimate_log_marginal(objective, dataloaders['train'])
-	toc = perf_counter()
-	print("train", log_p, round(toc-tic,5)*1e3)
-	make_plots(model, datasets, dataloaders)
-	save_state(objective, optimizer, prev_epochs + args.epochs)
+		if epoch % args.test_freq == 0:
+			test_epoch(objective, dataloaders['test'], epoch, agg)
+		if epoch % args.mll_freq == 0:
+			mll_helper(objective, dataloaders, epoch, agg)
+	epoch = prev_epochs + args.epochs
+
+	# Save the aggregrator.
+	save_aggregator(agg)
+
+	# Plot reconstructions and generations.
+	datasets['train'].dataset.make_plots(model, datasets, dataloaders, exp_dir)
+
+	# Save the model/objective.
+	save_state(objective, optimizer, epoch)
 
 
 ###

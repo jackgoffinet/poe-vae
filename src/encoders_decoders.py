@@ -44,7 +44,7 @@ class NetworkList(torch.nn.Module):
 
 class MLP(torch.nn.Module):
 
-	def __init__(self, dims, activation=torch.nn.ReLU):
+	def __init__(self, dims, activation=torch.nn.ReLU, last_activation=False):
 		"""
 		Simple fully-connected network with activations between layers.
 
@@ -60,6 +60,8 @@ class MLP(torch.nn.Module):
 			layers.append(torch.nn.Linear(dims[i],dims[i+1]))
 			layers.append(activation())
 		layers.append(torch.nn.Linear(dims[-2], dims[-1]))
+		if last_activation:
+			layers.append(activation())
 		self.net = torch.nn.Sequential(*layers)
 
 
@@ -102,16 +104,16 @@ class SplitLinearLayer(torch.nn.Module):
 
 
 
-class ModalityEmbeddingCatLayer(torch.nn.Module):
+class EncoderModalityEmbedding(torch.nn.Module):
 
-	def __init__(self, n_modalities, feature_dim=8):
+	def __init__(self, n_modalities, embed_dim=8):
 		"""
 
 
 		"""
-		super(ModalityEmbeddingCatLayer, self).__init__()
+		super(EncoderModalityEmbedding, self).__init__()
 		self.embed = \
-				torch.nn.Parameter(torch.randn(1, n_modalities, feature_dim))
+				torch.nn.Parameter(torch.randn(1, n_modalities, embed_dim))
 
 
 	def forward(self, x):
@@ -121,14 +123,51 @@ class ModalityEmbeddingCatLayer(torch.nn.Module):
 		Parameters
 		----------
 		x : torch.Tensor
+			Shape: [batch,modalities,m_dim]
+
+		Returns
+		-------
+		x_out : torch.Tensor
+			Shape: [batch,modalities,m_dim+embed_dim]
 		"""
-		print("forward x", x.shape)
 		assert len(x.shape) == 3
 		temp_embed = torch.tanh(self.embed)
 		temp_embed = temp_embed.expand(x.shape[0], -1, -1)
 		x = x.expand(-1, temp_embed.shape[1], -1)
 		return torch.cat([x,temp_embed], dim=2)
 
+
+class DecoderModalityEmbedding(torch.nn.Module):
+
+	def __init__(self, n_modalities, embed_dim=8):
+		"""
+
+
+		"""
+		super(DecoderModalityEmbedding, self).__init__()
+		self.embed = \
+				torch.nn.Parameter(torch.randn(1, 1, n_modalities, embed_dim))
+
+
+	def forward(self, x):
+		"""
+		Send `x` through the network.
+
+		Parameters
+		----------
+		x : torch.Tensor
+			Shape: [batch,samples,_] or [batch,samples,modalities,_]
+
+		Returns
+		-------
+		x_out : torch.Tensor
+			Shape: [batch,samples,modalities,_+embed_dim]
+		"""
+		if len(x.shape) == 3:
+			x = x.unsqueeze(2).expand(-1,-1,self.embed.shape[2],-1)
+		temp_embed = torch.tanh(self.embed)
+		temp_embed = temp_embed.expand(x.shape[0], x.shape[1], -1, -1)
+		return torch.cat([x,temp_embed], dim=3)
 
 
 if __name__ == '__main__':

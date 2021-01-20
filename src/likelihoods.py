@@ -41,7 +41,6 @@ class AbstractLikelihood(torch.nn.Module):
 class SphericalGaussianLikelihood(AbstractLikelihood):
 	n_parameters = 1 # mean parameter
 	parameter_dim_func = lambda d: (d,) # latent_dim -> parameter dimensions
-	magic_constant = None # TO DO
 
 
 	def __init__(self, std_dev):
@@ -61,20 +60,50 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 
 		Parameters
 		----------
-		xs : list of torch.Tensor
-			xs[modality] shape: [batch,x_dim]
-		decoder_xs : list of lists of single torch.Tensor
-			xs[modality][0] shape: [batch,n_samples,x_dim]
-		nan_mask : torch.Tensor or list of torch.Tensor
-			Indicates where data is missing.
+		xs : list of torch.Tensor or torch.Tensor
+			Shape: [modalities][batch,m_dim] or [batch,modalities,m_dim]
+		decoder_xs (vectorized): list of single torch.Tensor
+			Shape: [1][batch,n_samples,m_dim]
+		decoder_xs (not vectorized): list of lists of single torch.Tensor
+			Shape: [modalities][1][batch,n_samples,m_dim]
+		nan_mask (vectorized) : None or torch.Tensor
+			Indicates where data is missing. Shape: [batch,modalities]
+		nan_mask (vectorized) : None or list of torch.Tensor
+			Indicates where data is missing. Shape [modalities][...]
 
 		Returns
 		-------
-		log_probs : list of torch.Tensor
-			log_probs[modality] shape: [batch,n_samples]
+		log_probs (vectorized): torch.Tensor
+			Shape: [batch,n_samples,modalities]
+		log_probs (not vectorized): list of torch.Tensor
+			Shape: [modalities][batch,n_samples]
 		"""
-		assert len(xs) == len(decoder_xs)
+		if type(xs) == type([]): # not vectorized
+			return self._forward_non_vectorized(xs, decoder_xs, \
+					nan_mask=nan_mask)
 		# Unwrap the single parameter lists.
+		decoder_xs = decoder_xs[0] # [b,s,m,m_dim]
+		# We also know: xs.shape = [b,m,m_dim]
+		# Reset the distribution if necessary.
+		if xs.shape[-1] != self.dim or self.dist is None:
+			loc = torch.zeros(xs.shape[-1], device=xs.device)
+			scale = self.std_dev * torch.ones_like(loc)
+			self.dist = Normal(loc, scale)
+		log_probs = xs.unsqueeze(1) - decoder_xs
+		log_probs = self.dist.log_prob(log_probs).sum(dim=3) # [b,s,m]
+		if nan_mask is not None:
+			temp_mask = (~nan_mask).float().unsqueeze(1).expand(log_probs.shape)
+			assert temp_mask.shape == log_probs.shape, \
+					"{}!={}".format(temp_mask.shape, log_probs.shape)
+			log_probs = log_probs * temp_mask # [b,s,m]
+		return log_probs
+
+
+	def _forward_non_vectorized(self, xs, decoder_xs, nan_mask=None):
+		""" """
+		# Unwrap the single parameter lists.
+		assert len(xs) == len(decoder_xs), \
+				"{} != {}".format(len(xs), len(decoder_xs))
 		decoder_xs = [decoder_x[0] for decoder_x in decoder_xs]
 		# Reset the distribution if necessary.
 		if xs[0].shape[-1] != self.dim or self.dist is None:
@@ -99,7 +128,9 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 		like_params : list of list of torch.tensor
 			like_params[modality][param_num] shape: [batch,n_samples,z_dim]
 		"""
-		return [like_param[0] for like_param in like_params]
+		if type(like_params[0]) == type([]): # not vectorized
+			return [like_param[0] for like_param in like_params]
+		return like_params[0]
 
 
 	def rsample(self, like_params, n_samples):
