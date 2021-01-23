@@ -1,6 +1,9 @@
 """
 Main script: Train a model.
 
+This script is based on code from the MMVAE repo:
+https://github.com/iffsid/mmvae
+
 Notes
 -----
 * Loading a model and continuing to train breaks the random seeds. Train in one
@@ -114,18 +117,24 @@ exp_dir = os.path.join(LOGGING_DIR, exp_dir)
 log_fn = os.path.join(exp_dir, LOG_FN)
 state_fn = os.path.join(exp_dir, STATE_FN)
 agg_fn = os.path.join(exp_dir, AGG_FN)
+agg = None
 
 
 # See if we've already started this experiment.
 if args.pre_trained:
 	assert os.path.exists(exp_dir)
+	try:
+		agg = torch.load(agg_fn)
+		print("Loaded agg from {}".format(agg_fn))
+	except FileNotFoundError:
+		print("Couldn't find {} to load".format(agg_fn))
 else:
 	if os.path.exists(exp_dir):
-		# _ = input("Experiment path already exists! Continue? ")
+		_ = input("Experiment path already exists! Continue? ")
 		try:
 			os.remove(log_fn)
 		except FileNotFoundError:
-			pass
+			print("Couldn't find {} to remove".format(log_fn))
 	else:
 		os.makedirs(exp_dir)
 
@@ -255,7 +264,8 @@ def estimate_marginal_log_like(objective, loader, k=1000, mini_k=50, \
 		for i, batch in enumerate(loader):
 			inner_batch_res = []
 			for j in range(num_inner_batches):
-				log_l = objective.estimate_marginal_log_like(batch, k=mini_k, keepdim=True)
+				log_l = objective.estimate_marginal_log_like(batch, \
+						n_samples=mini_k, keepdim=True)
 				inner_batch_res.append(log_l)
 			log_m = torch.cat(inner_batch_res, dim=1) - np.log(k)
 			log_m = torch.logsumexp(log_m, dim=1)
@@ -312,7 +322,8 @@ if __name__ == '__main__':
 		prev_epochs = 0
 
 	# Set up a data aggregrator.
-	agg = defaultdict(list)
+	if agg is None:
+		agg = defaultdict(list)
 
 	# Enter a train loop.
 	for epoch in range(prev_epochs + 1, prev_epochs + args.epochs + 1):

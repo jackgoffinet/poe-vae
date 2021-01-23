@@ -87,9 +87,7 @@ class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 				"{} != {}".format(mean.shape,precision.shape)
 		assert len(mean.shape) == 2, \
 				"len(mean.shape) == {}".format(len(mean).shape)
-		# print("means", torch.mean(mean).item(), torch.min(mean).item(), torch.max(mean).item())
 		std_dev = torch.sqrt(torch.reciprocal(precision + EPS))
-		# print("mean std_dev", torch.mean(std_dev).item(), torch.min(std_dev).item(), torch.max(std_dev).item())
 		self.dist = Normal(mean, std_dev)
 		samples = self.dist.rsample(sample_shape=(n_samples,)) # [s,b,z]
 		log_prob = self.dist.log_prob(samples).sum(dim=2) # Sum over latent dim

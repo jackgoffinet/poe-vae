@@ -48,6 +48,98 @@ class VaeObjective(torch.nn.Module):
 		raise NotImplementedError
 
 
+	def encode(self, x, nan_mask, n_samples=1):
+		"""
+		Encode data.
+
+		Parameters
+		----------
+		x : list of torch.Tensor or torch.Tensor
+			Shape: [modalities][batch,m_dim] or [batch,modalities,m_dim]
+		nan_mask : list of torch.Tensor
+
+		Returns
+		-------
+		...
+		"""
+		# Encode data.
+		var_dist_params = self.encoder(x) # [n_params][b,m,param_dim]
+		# Combine evidence.
+		var_post_params = self.variational_strategy(*var_dist_params, \
+				nan_mask=nan_mask)
+		# Make a variational posterior and sample.
+		z_samples, log_qz = self.variational_posterior(*var_post_params, \
+				n_samples=n_samples)
+		# Evaluate prior.
+		log_pz = self.prior(z_samples)
+		return z_samples, log_qz, log_pz
+
+
+	def decode(self, z_samples, x, nan_mask):
+		"""
+
+		Parameters
+		----------
+		z_samples : torch.Tensor
+			Shape: [batch,n_samples,z_dim]
+		x : list of torch.Tensor or torch.Tensor
+			Shape: [modalities][batch,m_dim] or [batch,modalities,m_dim]
+
+		Returns
+		-------
+		log_likes : torch.Tensor
+			Shape: [batch,samples]
+		"""
+		# Decode samples to get likelihood parameters.
+		# likelihood_params shape:
+		# [n_params][b,m,m_dim] if vectorized, otherwise [m][n_params][b,s,x]
+		likelihood_params = self.decoder(z_samples)
+		# Evaluate likelihoods, sum over modalities.
+		log_likes = self.likelihood(x, likelihood_params, \
+				nan_mask=nan_mask)
+		# Sum over modality dimension.
+		if type(log_likes) == type([]): # not vectorized
+			log_likes = sum(log_like for log_like in log_likes)
+		else:
+			log_likes = torch.sum(log_likes, dim=2)
+		return log_likes
+
+
+	def estimate_marginal_log_like(self, x, n_samples=1000, keepdim=False):
+		"""
+
+		Parameters
+		----------
+		x : list of torch.Tensor
+		n_samples : int
+		 	Number of importance-weighted samples.
+		keepdim : bool
+			Keep the sample dimension.
+
+		Returns
+		-------
+		est_log_m : torch.Tensor
+			If `keepdim`: Likelihoods of all samples. Shape: [b,k]
+			Else: Estimated log marginal. Shape: [b]
+		"""
+		# Get missingness pattern, replace with zeros to prevent NaN gradients.
+		nan_mask = get_nan_mask(x)
+		if type(x) == type([]): # not vectorized, shape: [m][batch]
+			for i in range(len(x)):
+				x[i][nan_mask[i]] = 0.0
+		else: # vectorized modalities, shape: [batch,m]
+			x[nan_mask.unsqueeze(-1)] = 0.0
+		# [b,k,z], [b,k], [b,k]
+		z_samples, log_qz, log_pz = \
+				self.encode(x, nan_mask, n_samples=n_samples)
+		log_likes = self.decode(z_samples, x, nan_mask) # [b,k]
+		if keepdim: # Keep the sample dimension.
+			return log_pz - log_qz + log_likes
+		est_log_m = torch.logsumexp(log_pz - log_qz + log_likes \
+				- np.log(n_samples), dim=1)
+		return est_log_m
+
+
 
 class StandardElbo(VaeObjective):
 
@@ -99,82 +191,20 @@ class StandardElbo(VaeObjective):
 		return loss
 
 
-	def encode(self, x, nan_mask, n_samples=1):
+
+class IwaeElbo(VaeObjective):
+
+	def __init__(self, vae, k):
+		super(IwaeElbo, self).__init__(vae)
+		self.k = k
+
+	def forward(self, x):
 		"""
-		Encode data.
+		Evaluate the multisample IWAE ELBO.
 
 		Parameters
 		----------
-		x : list of torch.Tensor or torch.Tensor
-			Shape: [modalities][batch,m_dim] or [batch,modalities,m_dim]
-		nan_mask : list of torch.Tensor
-
-		Returns
-		-------
-		...
-		"""
-		# Encode data.
-		var_dist_params = self.encoder(x) # [n_params][b,m,param_dim]
-		# Combine evidence.
-		var_post_params = self.variational_strategy(*var_dist_params, \
-				nan_mask=nan_mask)
-		# Make a variational posterior and sample.
-		z_samples, log_qz = self.variational_posterior(*var_post_params, \
-				n_samples=n_samples)
-		# Evaluate prior.
-		log_pz = self.prior(z_samples)
-		return z_samples, log_qz, log_pz
-
-
-	def decode(self, z_samples, x, nan_mask):
-		"""
-
-		Parameters
-		----------
-		z_samples : torch.Tensor
-			Shape: [batch,n_samples,z_dim]
-		x : list of torch.Tensor or torch.Tensor
-			Shape: [modalities][batch,m_dim] or [batch,modalities,m_dim]
-
-		Returns
-		-------
-		log_likes : torch.Tensor
-			Shape: [batch,samples]
-		"""
-		# Decode samples to get likelihood parameters.
-		# likelihood_params shape:
-		# [n_params][b,m,m_dim] if vectorized, otherwise [m][n_params][b,s,x]
-		likelihood_params = self.decoder(z_samples)
-		# Evaluate likelihoods, sum over modalities.
-		log_likes = self.likelihood(x, likelihood_params, \
-				nan_mask=nan_mask)
-		# # TEMPORARY CHECK
-		# temp = torch.sum(nan_mask.float().unsqueeze(1)*log_likes)
-		# assert temp == 0.0, "{:.4f}".format()
-		# Sum over modality dimension.
-		if type(log_likes) == type([]): # not vectorized
-			log_likes = sum(log_like for log_like in log_likes)
-		else:
-			log_likes = torch.sum(log_likes, dim=2)
-		return log_likes
-
-
-	def estimate_marginal_log_like(self, x, k=1000, keepdim=False):
-		"""
-
-		Parameters
-		----------
-		x : list of torch.Tensor
-		k : int
-		 	Number of importance-weighted samples.
-		keepdim : bool
-			Keep the sample dimension.
-
-		Returns
-		-------
-		est_log_m : torch.Tensor
-			If `keepdim`: Likelihoods of all samples. Shape: [b,k]
-			Else: Estimated log marginal. Shape: [b]
+		x : torch.Tensor
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		nan_mask = get_nan_mask(x)
@@ -183,25 +213,36 @@ class StandardElbo(VaeObjective):
 				x[i][nan_mask[i]] = 0.0
 		else: # vectorized modalities, shape: [batch,m]
 			x[nan_mask.unsqueeze(-1)] = 0.0
-		# [b,k,z], [b,k], [b,k]
-		z_samples, log_qz, log_pz = self.encode(x, nan_mask, n_samples=k)
-		log_likes = self.decode(z_samples, x, nan_mask) # [b,k]
-		if keepdim: # Keep the sample dimension.
-			return log_pz - log_qz + log_likes
-		est_log_m = torch.logsumexp(log_pz - log_qz + log_likes - np.log(k), \
-				dim=1)
-		return est_log_m
+		# Encode.
+		# [b,s,z], [b,s], [b,s]
+		z_samples, log_qz, log_pz = self.encode(x, nan_mask, n_samples=self.k)
+		assert log_pz.shape[1] == self.k # assert k samples
+		# log_pz = log_pz.sum(dim=1) # [b] Sum over sample dimension
+		# Decode.
+		log_likes = self.decode(z_samples, x, nan_mask) # [b,1]
+		# assert log_likes.shape[1] == 1
+		# log_likes = log_likes.sum(dim=1) # sum over sample dimension
+		ws = log_pz + log_likes - log_qz - np.log(self.k)
+		print("ws", ws.shape)
+		quit()
+		# Evaluate loss.
+		assert len(log_pz.shape) == 1
+		assert len(log_likes.shape) == 1
+		assert len(kld.shape) == 1
+		loss = -torch.mean(log_pz + log_likes - kld)
+		return loss
 
 
 
-class IwaeElbo(VaeObjective):
+class DregIwaeElbo(VaeObjective):
 
-	def __init__(self, vae):
-		super(IwaeElbo, self).__init__(vae)
+	def __init__(self, vae, k):
+		super(DregIwaeElbo, self).__init__(vae)
+		self.k = k
 
 	def forward(self, x):
 		"""
-		Evaluate the multisample IWAE ELBO.
+		Evaluate the multisample IWAE ELBO with the DReG estimator.
 
 		Parameters
 		----------
