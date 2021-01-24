@@ -9,6 +9,7 @@ from math import log
 import torch
 from torch.distributions import Normal, OneHotCategorical
 
+from .distributions.von_mises_fisher import VonMisesFisher
 
 EPS = 1e-5
 
@@ -23,7 +24,7 @@ class AbstractVariationalPosterior(torch.nn.Module):
 
 	def forward(self, *dist_parameters, n_samples=1):
 		"""
-		Produce reparamaterizable samples and evaluate their log probability.
+		Produce reparamaterized samples and evaluate their log probability.
 
 		Parameters
 		----------
@@ -55,18 +56,17 @@ class AbstractVariationalPosterior(torch.nn.Module):
 
 
 class DiagonalGaussianPosterior(AbstractVariationalPosterior):
-	n_parameters = 2 # mean and precision vectors: TO DO needed?
-	parameter_dim_func = lambda d: (d,d) # latent_dim -> parameter dimensions
 
-
-	def __init__(self):
+	def __init__(self, args):
 		"""Diagonal Gaussian varitional posterior."""
 		super(DiagonalGaussianPosterior, self).__init__()
+		# latent_dim -> parameter dimensions
+		self.parameter_dim_func = lambda d: (d,d)
 
 
 	def forward(self, mean, precision, n_samples=1, transpose=True):
 		"""
-		Produce reparamaterizable samples and evaluate their log probability.
+		Produce reparamaterized samples and evaluate their log probability.
 
 		Parameters
 		----------
@@ -121,16 +121,17 @@ class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 
 
 class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
-	n_parameters = 2 # mean and precision vectors: TO DO needed?
-	parameter_dim_func = lambda d: (d,d) # latent_dim -> parameter dimensions
 
-	def __init__(self):
+	def __init__(self, args):
 		"""
 		Mixture of diagonal Gaussians variational posterior.
 
 		The component weights are assumed to be equal.
 		"""
 		super(DiagonalGaussianMixturePosterior, self).__init__()
+		# latent_dim -> parameter dimensions
+		self.parameter_dim_func = lambda d: (d,d)
+
 
 	def forward(self, means, precisions, n_samples=1):
 		"""
@@ -166,7 +167,8 @@ class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
 
 	def _helper(self, means, precisions, samples=None, n_samples=1):
 		"""
-		If `samples` is given, evaluate them. Else, make and evaluate them.
+		If `samples` is given, evaluate their log probability. Otherwise, make
+		samples and evaluate their log probability.
 		"""
 		if type(means) == type([]): # not vectorized
 			raise NotImplementedError
@@ -196,8 +198,9 @@ class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
 
 	def non_stratified_forward(self, means, precisions, n_samples=1):
 		"""
-		Non-stratified sampling version of `forward`.
+		Standard (non-stratified) sampling version of `forward`.
 
+		* useful for MLL estimation
 		"""
 		if type(means) == type([]): # not vectorized
 			raise NotImplementedError
@@ -218,11 +221,84 @@ class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
 			# [b,s,1,z]
 			samples = torch.sum(samples * ohc_sample, dim=2, keepdim=True)
 			# [b,s,m,z]
-			log_probs = self.dist.log_prob(samples.expand(-1,-1,means.shape[2],-1))
+			log_probs = self.dist.log_prob( \
+					samples.expand(-1,-1,means.shape[2],-1))
 			log_probs = torch.sum(log_probs, dim=3)
 			# [b,s]
 			log_probs = torch.logsumexp(log_probs - log(means.shape[2]), dim=2)
 			return samples.squeeze(2), log_probs
+
+
+
+class VmfProductPosterior(AbstractVariationalPosterior):
+
+	def __init__(self, args):
+		"""Product of von Mises Fishers varitional posterior."""
+		super(VmfProductPosterior, self).__init__()
+		self.vmf_dim = args.vmf_dim # vMFs are defined on the (vmf_dim-1)-sphere
+		self.latent_dim = args.latent_dim
+		assert self.latent_dim % (self.vmf_dim - 1) == 0, \
+				"Incompatible z_dim and vmf_dim!"
+		self.n_vmfs = self.latent_dim // (self.vmf_dim - 1)
+		self.input_dim = self.n_vmfs * self.vmf_dim
+
+		def parameter_dim_func(z):
+			assert z == self.latent_dim, "Incompatible shapes!"
+			return (self.input_dim, self.n_vmfs)
+
+		self.parameter_dim_func = parameter_dim_func
+
+
+	def forward(self, loc, scale, n_samples=1, transpose=True):
+		"""
+		Produce reparamaterized samples and evaluate their log probability.
+
+		Parameters
+		----------
+		loc : torch.Tensor
+			Shape: [b,n_vmfs,d]
+		scale : torch.Tensor
+			Shape: [b,n_vmfs,1]
+		n_samples : int
+		transpose : bool
+
+		Returns
+		-------
+		samples : torch.Tensor
+			Samples from the distribution. Shape: [batch,n_samples,z_dim]
+		log_prob : torch.Tensor
+			Log probability of samples under the distribution.
+			Shape: [batch,n_samples]
+		"""
+		assert len(loc.shape) == 3, \
+				"len(loc.shape) == {}".format(len(loc).shape)
+		assert loc.shape[:-1] == scale.shape[:-1]
+		assert scale.shape[-1] == 1
+		assert loc.shape[-1] == self.vmf_dim
+		self.dist = VonMisesFisher(loc, scale)
+		samples = self.dist.rsample(shape=n_samples) # [s,b,n_vmfs,vmf_dim]
+		log_prob = self.dist.log_prob(samples).sum(dim=-1) #[s,b,n_vmfs*vmf_dim]
+		samples = samples.view(samples.shape[:2]+(-1,)) # [s,b,n_]
+		if transpose:
+			# [s,b,*] -> [b,s,*]
+			return samples.transpose(0,1), log_prob.transpose(0,1)
+		return samples, log_prob
+
+
+	def rsample(self):
+		""" """
+		raise NotImplementedError
+
+
+	def log_prob(self, samples, loc, scale, transpose=True):
+		"""
+		...
+
+		Parameters
+		----------
+		samples : torch.Tensor [...]
+		"""
+		raise NotImplementedError
 
 
 

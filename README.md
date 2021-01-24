@@ -5,6 +5,12 @@
 
 This repo contains ...
 
+
+Test vMF PoE:
+python main.py -q vmf_product --latent-dim 20 --vmf-dim 3 -v vmf_poe -p uniform_hypershperical
+
+
+
 See also:
 
 * [MVAE repo](https://github.com/mhw32/multimodal-vae-public)

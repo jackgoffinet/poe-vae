@@ -4,11 +4,16 @@ Define strategies for combining evidence into variational distributions.
 These strategies all subclass torch.nn.Module. Their job is to convert
 parameter values straight out of the encoder into a variational posterior,
 combining evidence across the different modalities in some way.
+
+TO DO
+-----
+* The GaussianPoeStrategy assumes a unit normal prior. Generalize this.
 """
 __date__ = "January 2021"
 
 
 import torch
+import torch.nn.functional as F
 
 
 
@@ -39,7 +44,7 @@ class AbstractVariationalStrategy(torch.nn.Module):
 class GaussianPoeStrategy(AbstractVariationalStrategy):
 	EPS = 1e-5
 
-	def __init__(self):
+	def __init__(self, args):
 		"""
 		Gaussian product of experts strategy
 
@@ -96,7 +101,7 @@ class GaussianPoeStrategy(AbstractVariationalStrategy):
 
 class GaussianMoeStrategy(torch.nn.Module):
 
-	def __init__(self):
+	def __init__(self, args):
 		"""
 		Gaussian mixture of experts strategy
 
@@ -139,6 +144,65 @@ class GaussianMoeStrategy(torch.nn.Module):
 			means = means * temp_mask
 		precisions = precisions + 1.0 # Add the prior expert.
 		return means, precisions
+
+
+
+class VmfPoeStrategy(AbstractVariationalStrategy):
+	EPS = 1e-5
+
+	def __init__(self, args):
+		"""
+		von Mises Fisher product of experts strategy
+
+		Parameters
+		----------
+		...
+		"""
+		super(VmfPoeStrategy, self).__init__()
+
+
+	def forward(self, locs, scales, nan_mask=None):
+		"""
+		scale is the \kappa parameter in the vMF
+
+		Parameters
+		----------
+		locs : list of torch.Tensor
+			Shape: [b,m,d*n_vmf]
+		scales : list of torch.Tensor
+			Shape: [b,m,n_vmf]
+		nan_mask : torch.Tensor or list of torch.Tensor
+			Indicates where data is missing.
+
+		Returns
+		-------
+		loc : torch.Tensor
+			Shape: [batch, z_dim]
+		scale : torch.Tensor
+			Shape: [batch, z_dim]
+		"""
+		list_flag = type(locs) == type([]) # not vectorized
+		if list_flag:
+			locs = torch.stack(locs, dim=1) # [b,m,d*n_vmf]
+			scales = torch.stack(scales, dim=1) # [b,m,n_vmf]
+		scales = F.softplus(scales) # [b,m,n_vmf]
+		assert len(locs.shape) == 3 and len(scales.shape) == 3
+		assert locs.shape[-1] % scales.shape[-1] == 0
+		d = locs.shape[-1] // scales.shape[-1]
+		locs = locs.view(scales.shape[:3]+(d,)) # [b,m,n_vmf,d]
+		scales = scales.unsqueeze(-1) # [b,m,n_vmf,1]
+		if nan_mask is not None:
+			if list_flag:
+				temp_mask = torch.stack(nan_mask, dim=1) # [b,m]
+			else:
+				temp_mask = nan_mask # [b,m]
+			temp_mask = (~temp_mask).float().unsqueeze(-1).unsqueeze(-1)
+			scales = scales * temp_mask.expand(-1,-1,scales.shape[2],-1)
+		# Combine all the experts.
+		kappa_mus = torch.sum(locs * scales,dim=1) # [b,n_vmf,d]
+		kappa = kappa_mus.norm(dim=-1, keepdim=True) # [b,n_vmf,1]
+		mus = kappa_mus / (kappa + self.EPS) # [b,n_vmf,d]
+		return mus, kappa
 
 
 

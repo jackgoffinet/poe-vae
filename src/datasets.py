@@ -61,7 +61,9 @@ class MnistHalvesEncoder(torch.nn.Module):
 	def forward(self, xs):
 		assert len(xs) == self.m
 		assert xs[0].shape[-1] == self.m_dim
-		return [self.net_1(xs[0]), self.net_2(xs[1])]
+		out_1, out_2 = self.net_1(xs[0]), self.net_2(xs[1])
+		# Pair like parameters.
+		return [[i,j] for i,j in zip(out_1,out_2)]
 
 
 
@@ -85,8 +87,11 @@ class MnistHalvesDecoder(torch.nn.Module):
 		self.net_2 = torch.nn.Sequential(mlp_2, split_2)
 
 	def forward(self, z):
-		assert z.shape[-1] == self.z_dim
-		return [self.net_1(z), self.net_2(z)]
+		assert z.shape[-1] == self.z_dim, \
+				"{}[-1]!={}".format(z.shape,self.z_dim)
+		out_1, out_2 = self.net_1(z), self.net_2(z)
+		# Pair like parameters.
+		return [[i,j] for i,j in zip(out_1,out_2)]
 
 
 
@@ -181,7 +186,7 @@ class MnistHalvesDataset(Dataset):
 		data_cols = []
 		for data_col in data:
 			m, b, s, x_dim = data_col.shape
-			assert m == 2 and x_dim == 392
+			assert m == 2 and x_dim == 392, str(data_col.shape)
 			data_col = data_col.reshape(m,b*s,x_dim)
 			data_col = np.concatenate([data_col[0],data_col[1]], axis=-1)
 			data_col = data_col.reshape(-1,28)
@@ -236,7 +241,8 @@ class MnistMcarDecoder(torch.nn.Module):
 
 
 	def forward(self, z):
-		assert z.shape[-1] == self.z_dim
+		assert z.shape[-1] == self.z_dim, \
+				"{}[-1]!={}".format(z.shape,self.z_dim)
 		z = self.embed_layer(z)
 		z = self.mlp(z)
 		z = self.embed_layer(z)
@@ -356,7 +362,7 @@ def generate(vae, n_samples=9, decoder_noise=False):
 	vae.eval()
 	with torch.no_grad():
 		z_samples = vae.prior.rsample(n_samples=n_samples) # [1,n,z]
-		like_params = vae.decoder(z_samples) # [m][param_num][1,n,z]
+		like_params = vae.decoder(z_samples) # [param_num][m][1,n,x]
 		if decoder_noise:
 			assert hasattr(vae.likelihood, 'rsample')
 			generated = vae.likelihood.rsample(like_params, n_samples=n_samples)

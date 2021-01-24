@@ -50,7 +50,7 @@ class VaeObjective(torch.nn.Module):
 
 	def encode(self, x, nan_mask, n_samples=1):
 		"""
-		Encode data.
+		Standard encoding procedure.
 
 		Parameters
 		----------
@@ -82,6 +82,7 @@ class VaeObjective(torch.nn.Module):
 
 	def decode(self, z_samples, x, nan_mask):
 		"""
+		Standard decoding procedure.
 
 		Parameters
 		----------
@@ -97,17 +98,17 @@ class VaeObjective(torch.nn.Module):
 		"""
 		# Decode samples to get likelihood parameters.
 		# likelihood_params shape:
-		# [n_params][b,m,m_dim] if vectorized, otherwise [m][n_params][b,s,x]
+		# [n_params][b,m,m_dim] if vectorized, otherwise [n_params][m][b,s,x]
 		likelihood_params = self.decoder(z_samples)
 		# Evaluate likelihoods, sum over modalities.
 		log_likes = self.likelihood(x, likelihood_params, \
-				nan_mask=nan_mask)
+				nan_mask=nan_mask) # [m][b,s] or [b,s,m]
 		# Sum over modality dimension.
 		if type(log_likes) == type([]): # not vectorized
-			log_likes = sum(log_like for log_like in log_likes)
+			log_likes = sum(log_like for log_like in log_likes) # [b,s]
 		else:
-			log_likes = torch.sum(log_likes, dim=2)
-		return log_likes
+			log_likes = torch.sum(log_likes, dim=2) # [b,s]
+		return log_likes # [b,m]
 
 
 	def estimate_marginal_log_like(self, x, n_samples=1000, keepdim=False):

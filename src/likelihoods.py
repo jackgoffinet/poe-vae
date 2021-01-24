@@ -39,19 +39,17 @@ class AbstractLikelihood(torch.nn.Module):
 
 
 class SphericalGaussianLikelihood(AbstractLikelihood):
-	n_parameters = 1 # mean parameter
-	parameter_dim_func = lambda d: (d,) # latent_dim -> parameter dimensions
 
-
-	def __init__(self, std_dev):
+	def __init__(self, args):
 		"""
 		Spherical Gaussian likelihood distribution.
 
 		"""
 		super(SphericalGaussianLikelihood, self).__init__()
-		self.std_dev = std_dev
+		self.std_dev = args.obs_std_dev
 		self.dist = None
 		self.dim = -1
+		self.parameter_dim_func = lambda d: (d,)
 
 
 	def forward(self, xs, decoder_xs, nan_mask=None):
@@ -100,11 +98,12 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 
 
 	def _forward_non_vectorized(self, xs, decoder_xs, nan_mask=None):
-		""" """
+		"""Non-vectorized version of `forward`"""
+		assert len(decoder_xs) == 1
 		# Unwrap the single parameter lists.
+		decoder_xs = [decoder_x for decoder_x in decoder_xs[0]]
 		assert len(xs) == len(decoder_xs), \
 				"{} != {}".format(len(xs), len(decoder_xs))
-		decoder_xs = [decoder_x[0] for decoder_x in decoder_xs]
 		# Reset the distribution if necessary.
 		if xs[0].shape[-1] != self.dim or self.dist is None:
 			loc = torch.zeros(xs[0].shape[-1], device=xs[0].device)
@@ -125,11 +124,13 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 
 		Parameters
 		----------
-		like_params : list of list of torch.tensor
-			like_params[modality][param_num] shape: [batch,n_samples,z_dim]
+		like_params (non-vectorized): list of list of torch.tensor
+			like_params[param_num][modality] shape: [batch,n_samples,z_dim]
+		like_params (vectorized): list of torch.tensor
+			Shape: ...
 		"""
 		if type(like_params[0]) == type([]): # not vectorized
-			return [like_param[0] for like_param in like_params]
+			return [like_param for like_param in like_params[0]]
 		return like_params[0]
 
 
@@ -138,6 +139,7 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 		Test this!
 
 		"""
+		raise NotImplementedError
 		assert self.dist is not None
 		loc = torch.zeros(like_params[0].shape[-1], \
 				device=like_params[0].device)

@@ -82,6 +82,8 @@ parser.add_argument('--latent-dim', type=int, default=20, metavar='L',
 					help='latent dimension (default: 20)')
 parser.add_argument('--m-dim', type=int, default=4, metavar='K',
 					help='modality embedding dimension (default: 8)')
+parser.add_argument('--vmf-dim', type=int, default=2, metavar='K',
+					help='ambient dimension of vMF spheres (default: 2)')
 parser.add_argument('--obs-std-dev', type=float, default=0.1, metavar='L',
 					help='Observation standard deviation (default: 0.1)')
 parser.add_argument('--num-hidden-layers', type=int, default=2, metavar='H',

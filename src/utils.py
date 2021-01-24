@@ -116,13 +116,18 @@ def make_vae(args):
 	-------
 	vae : torch.nn.ModuleDict
 	"""
+	# encoder & decoder rely on variational_posterior and likelihood, so make
+	# these first.
+	var_post = args.variational_posterior(args)
+	likelihood = args.likelihood(args)
+	# Then make everything else.
 	vae = torch.nn.ModuleDict([ \
-			['encoder', make_encoder(args)],
-			['variational_strategy', args.variational_strategy()],
-			['variational_posterior', args.variational_posterior()],
-			['prior', args.prior()],
-			['decoder', make_decoder(args)],
-			['likelihood', args.likelihood(args.obs_std_dev)],
+			['encoder', make_encoder(args, var_post.parameter_dim_func)],
+			['variational_strategy', args.variational_strategy(args)],
+			['variational_posterior', var_post],
+			['prior', args.prior(args)],
+			['decoder', make_decoder(args, likelihood.parameter_dim_func)],
+			['likelihood', likelihood],
 	])
 	return vae.to(args.device)
 
@@ -143,7 +148,7 @@ def make_objective(model, args):
 	return args.objective(model, args).to(args.device)
 
 
-def make_encoder(args):
+def make_encoder(args, parameter_dim_func):
 	"""
 	Make the encoder.
 
@@ -159,7 +164,7 @@ def make_encoder(args):
 	"""
 	in_dim = args.dataset.modality_dim
 	z_dim = args.latent_dim
-	output_dims = args.variational_posterior.parameter_dim_func(z_dim)
+	output_dims = parameter_dim_func(z_dim)
 	return args.dataset.encoder_c( \
 			args.num_hidden_layers,
 			args.hidden_layer_dim,
@@ -167,11 +172,8 @@ def make_encoder(args):
 			args.m_dim,
 	)
 
-	# net_class = args.encoder
-	# return _make_net_helper(args, in_dim, output_dims, net_class, True)
 
-
-def make_decoder(args):
+def make_decoder(args, parameter_dim_func):
 	"""
 	Make the decoder.
 
@@ -185,19 +187,15 @@ def make_decoder(args):
 	-------
 	decoder : .components.encoders_decoders.NetworkList (torch.nn.Module)
 	"""
-	# in_dim = args.latent_dim
 	modality_dim = args.dataset.modality_dim
-	output_dims = args.likelihood.parameter_dim_func(modality_dim)
+	output_dims = parameter_dim_func(modality_dim)
 	return args.dataset.decoder_c( \
 		args.num_hidden_layers,
 		args.hidden_layer_dim,
 		output_dims,
-		args.latent_dim,
+		args.decoder_input_dim,
 		args.m_dim,
 	)
-
-	# net_class = args.decoder
-	# return _make_net_helper(args, in_dim, output_dims, net_class, False)
 
 
 def _make_net_helper(args, in_dim, output_dims, net_class, is_encoder):
@@ -269,8 +267,15 @@ def check_args(args):
 	args.decoder = ENCODER_DECODER_MAP[args.decoder]
 	args.likelihood = LIKELIHOOD_MAP[args.likelihood]
 	args.objective = OBJECTIVE_MAP[args.objective]
-	# Next, make sure the components are compatible.
+	# Add whether the modalities are vectorized.
 	args.vectorized = args.dataset.vectorized_modalities
+	# Add the decoder input dim.
+	if args.variational_strategy == VARIATIONAL_STRATEGY_MAP['vmf_poe']:
+		n_vmfs = args.latent_dim // (args.vmf_dim - 1)
+		args.decoder_input_dim = n_vmfs * args.vmf_dim
+	else:
+		args.decoder_input_dim = args.latent_dim
+	# Next, make sure the components are compatible.
 	# TO DO: finish this!
 	pass
 
