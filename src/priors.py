@@ -66,7 +66,7 @@ class StandardGaussianPrior(AbstractPrior):
 			scale = torch.ones_like(loc)
 			self.dist = Normal(loc, scale)
 		log_prob = self.dist.log_prob(x)
-		return torch.sum(log_prob, dim=2)
+		return torch.sum(log_prob, dim=-1)
 
 
 	def rsample(self, n_samples=1, n_batches=1):

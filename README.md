@@ -24,7 +24,8 @@ import torch
 ### TO DO
 
 2. Figure out how to enforce component compatibility.
-7. MoE
-9. probtorch integration?
 12. Validation set for early stopping
 14. Lightweight VAE class?
+15. Double check DReG gradients
+16. STL gradients
+17. AR-ELBO

@@ -140,7 +140,7 @@ def make_objective(model, args):
 	-------
 	.components.objectives.VaeObjective (subclasses torch.nn.Module)
 	"""
-	return args.objective(model).to(args.device)
+	return args.objective(model, args).to(args.device)
 
 
 def make_encoder(args):

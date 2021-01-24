@@ -74,11 +74,9 @@ class GaussianPoeStrategy(AbstractVariationalStrategy):
 		if list_flag:
 			means = torch.stack(means, dim=1) # [b,m,z]
 			precisions = torch.stack(log_precisions, dim=1)
-			# precisions = torch.nn.functional.softplus(precisions) # [b,m,z]
 			precisions = torch.exp(precisions) # [b,m,z]
 		else:
 			precisions = log_precisions.exp()
-		# print("mean prec:", torch.mean(precisions), torch.min(precisions), torch.max(precisions))
 		if nan_mask is not None:
 			if list_flag:
 				temp_mask = torch.stack(nan_mask, dim=1)
@@ -88,8 +86,6 @@ class GaussianPoeStrategy(AbstractVariationalStrategy):
 			temp_mask = (~temp_mask).float().unsqueeze(-1)
 			temp_mask = temp_mask.expand(-1,-1,precisions.shape[2])
 			precisions = precisions * temp_mask
-		# print("precisions", precisions.shape)
-		# quit()
 		# Combine all the experts. Include the 1.0 for the prior expert!
 		precision = torch.sum(precisions, dim=1) + 1.0 # [b,z_dim]
 		prec_mean = torch.sum(means * precisions, dim=1) # [b,z_dim]
@@ -105,8 +101,7 @@ class GaussianMoeStrategy(torch.nn.Module):
 		Gaussian mixture of experts strategy
 
 		"""
-		super(GaussianPoeStrategy, self).__init__()
-		pass
+		super(GaussianMoeStrategy, self).__init__()
 
 
 	def forward(self, means, log_precisions, nan_mask=None):
@@ -124,7 +119,26 @@ class GaussianMoeStrategy(torch.nn.Module):
 		Returns
 		-------
 		"""
-		raise NotImplementedError
+		list_flag = type(means) == type([]) # not vectorized
+		if list_flag:
+			means = torch.stack(means, dim=1) # [b,m,z]
+			precisions = torch.stack(log_precisions, dim=1)
+			precisions = torch.exp(precisions) # [b,m,z]
+		else:
+			precisions = log_precisions.exp()
+		# Where things are NaNs, replace mixture components with the prior.
+		if nan_mask is not None:
+			if list_flag:
+				temp_mask = torch.stack(nan_mask, dim=1)
+			else:
+				temp_mask = nan_mask
+			assert len(precisions.shape) == 3
+			temp_mask = (~temp_mask).float().unsqueeze(-1)
+			temp_mask = temp_mask.expand(-1,-1,precisions.shape[2])
+			precisions = precisions * temp_mask
+			means = means * temp_mask
+		precisions = precisions + 1.0 # Add the prior expert.
+		return means, precisions
 
 
 

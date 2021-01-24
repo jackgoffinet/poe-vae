@@ -32,9 +32,11 @@ VARIATIONAL_STRATEGY_KEYS = sorted(list(VARIATIONAL_STRATEGY_MAP.keys()))
 
 
 # Variational posteriors
-from .variational_posteriors import DiagonalGaussianPosterior
+from .variational_posteriors import DiagonalGaussianPosterior, \
+		DiagonalGaussianMixturePosterior
 VARIATIONAL_POSTERIOR_MAP = {
 	'diag_gaussian': DiagonalGaussianPosterior,
+	'diag_gaussian_mixture': DiagonalGaussianMixturePosterior,
 }
 VARIATIONAL_POSTERIOR_KEYS = sorted(list(VARIATIONAL_POSTERIOR_MAP.keys()))
 
@@ -56,10 +58,12 @@ LIKELIHOOD_KEYS = sorted(list(LIKELIHOOD_MAP.keys()))
 
 
 # Objectives
-from .objectives import StandardElbo, IwaeElbo
+from .objectives import StandardElbo, IwaeElbo, DregIwaeElbo, MmvaeQuadraticElbo
 OBJECTIVE_MAP = {
 	'elbo': StandardElbo,
 	'iwae': IwaeElbo,
+	'dreg_iwae': DregIwaeElbo,
+	'mmvae_quadratic': MmvaeQuadraticElbo,
 }
 OBJECTIVE_KEYS = sorted(list(OBJECTIVE_MAP.keys()))
 

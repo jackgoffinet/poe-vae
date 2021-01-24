@@ -137,9 +137,40 @@ class MnistHalvesDataset(Dataset):
 				self.view_2[index].to(self.device),
 		]
 
-	def plot(self, data, fn, grid_shape=None):
+	def make_plots(self, model, datasets, dataloaders, exp_dir):
+		# Make filenames.
+		generate_fn = os.path.join(exp_dir, GENERATE_FN)
+		train_reconstruct_fn = os.path.join(exp_dir, TRAIN_RECONSTRUCT_FN)
+		test_reconstruct_fn = os.path.join(exp_dir, TEST_RECONSTRUCT_FN)
+		# Plot generated data.
+		generated_data = generate(model, n_samples=5) # [m,b,s,x]
+		self.plot(generated_data, generate_fn)
+		# Plot train reconstructions.
+		for batch in dataloaders['train']:
+			data = [b[:5] for b in batch]
+			recon_data = reconstruct(model, data) # [m,b,s,x]
+			if len(recon_data.shape) == 5: # stratified sampling
+				recon_data = recon_data[:,:,:,np.random.randint(recon_data.shape[3])]
+			# recon_data = np.swapaxes(recon_data, 0, 1)
+			break
+		data = np.array([d.detach().cpu().numpy() for d in data])
+		data = data.reshape(recon_data.shape) # [m,b,s,x]
+		self.plot([data,recon_data], train_reconstruct_fn)
+		# Plot test reconstructions.
+		for batch in dataloaders['test']:
+			data = [b[:5] for b in batch]
+			recon_data = reconstruct(model, data) # [m,b,s,x]
+			if len(recon_data.shape) == 5: # stratified sampling
+				recon_data = recon_data[:,:,:,np.random.randint(recon_data.shape[3])]
+			break
+		data = np.array([d.detach().cpu().numpy() for d in data])
+		data = data.reshape(recon_data.shape) # [m,b,s,x]
+		self.plot([data,recon_data], test_reconstruct_fn)
+
+
+	def plot(self, data, fn):
 		"""
-		TO DO: make this better!
+		MnistHalves plotting
 
 		data : numpy.ndarray
 			Shape: [m,b,samples,x_dim]
@@ -280,11 +311,9 @@ class MnistMcarDataset(Dataset):
 		self.plot([data,recon_data], test_reconstruct_fn)
 
 
-	def plot(self, data, fn, grid_shape=None):
+	def plot(self, data, fn):
 		"""
 		MnistMCAR plotting
-
-		TO DO: make this better!
 
 		data : numpy.ndarray
 			Shape: [m,b,samples,x_dim]
@@ -370,6 +399,8 @@ def reconstruct(vae, x, decoder_noise=False):
 		else:
 			assert hasattr(vae.likelihood, 'mean')
 			generated = vae.likelihood.mean(like_params, n_samples=1)
+	if type(x) == type([]):
+		return np.array([g.detach().cpu().numpy() for g in generated])
 	return generated.detach().cpu().numpy()
 
 
