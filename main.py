@@ -92,7 +92,7 @@ parser.add_argument('--hidden-layer-dim', type=int, default=64, metavar='H',
 					help='hidden layer dimension (default: 64)')
 parser.add_argument('--pre-trained', action='store_true', default=False,
 					help='load a saved model')
-parser.add_argument('--mll-freq', type=int, default=100,
+parser.add_argument('--mll-freq', type=int, default=1000,
 					help='marginal likelihood estimation frequency')
 parser.add_argument('--test-freq', type=int, default=10,
 					help='test set estimation frequency')
@@ -132,7 +132,7 @@ if args.pre_trained:
 		print("Couldn't find {} to load".format(agg_fn))
 else:
 	if os.path.exists(exp_dir):
-		_ = input("Experiment path already exists! Continue? ")
+		# _ = input("Experiment path already exists! Continue? ")
 		try:
 			os.remove(log_fn)
 		except FileNotFoundError:

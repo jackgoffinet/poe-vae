@@ -1,5 +1,5 @@
 """
-Copied from the hyperspherical VAE repository:
+Copied with minor modifications from the hyperspherical VAE repository:
 https://github.com/nicola-decao/s-vae-pytorch
 
 
@@ -34,6 +34,10 @@ from .ive import ive, ive_fraction_approx, ive_fraction_approx2
 from .hyperspherical_uniform import (
 	HypersphericalUniform,
 )
+
+
+EPS = 1e-5
+
 
 
 class VonMisesFisher(torch.distributions.Distribution):
@@ -91,7 +95,7 @@ class VonMisesFisher(torch.distributions.Distribution):
 			.to(self.device)
 			.transpose(0, -1)[1:]
 		).transpose(0, -1)
-		v = v / v.norm(dim=-1, keepdim=True)
+		v = v / (v.norm(dim=-1, keepdim=True) + EPS)
 
 		w_ = torch.sqrt(torch.clamp(1 - (w ** 2), 1e-10))
 		x = torch.cat((w, w_ * v), -1)
@@ -101,13 +105,13 @@ class VonMisesFisher(torch.distributions.Distribution):
 
 	def __sample_w3(self, shape):
 		shape = shape + torch.Size(self.scale.shape)
-		u = torch.distributions.Uniform(0, 1).sample(shape).to(self.device)
+		u = torch.distributions.Uniform(EPS, 1).sample(shape).to(self.device)
 		self.__w = (
 			1
 			+ torch.stack(
 				[torch.log(u), torch.log(1 - u) - 2 * self.scale], dim=0
 			).logsumexp(0)
-			/ self.scale
+			/ (self.scale + EPS)
 		)
 		return self.__w
 
@@ -117,7 +121,7 @@ class VonMisesFisher(torch.distributions.Distribution):
 
 		# using Taylor approximation with a smooth swift from 10 < scale < 11
 		# to avoid numerical errors for large scale
-		b_app = (self.__m - 1) / (4 * self.scale)
+		b_app = (self.__m - 1) / (4 * self.scale + EPS)
 		s = torch.min(
 			torch.max(
 				torch.tensor([0.0], dtype=self.dtype, device=self.device),

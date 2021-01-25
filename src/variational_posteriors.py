@@ -88,7 +88,7 @@ class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 		assert mean.shape == precision.shape, \
 				"{} != {}".format(mean.shape,precision.shape)
 		assert len(mean.shape) == 2, \
-				"len(mean.shape) == {}".format(len(mean).shape)
+				"len(mean.shape) == len({})".format(mean.shape)
 		std_dev = torch.sqrt(torch.reciprocal(precision + EPS))
 		self.dist = Normal(mean, std_dev)
 		samples = self.dist.rsample(sample_shape=(n_samples,)) # [s,b,z]
