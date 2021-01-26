@@ -24,22 +24,25 @@ ENCODER_DECODER_KEYS = sorted(list(ENCODER_DECODER_MAP.keys()))
 
 # Variational strategies
 from .variational_strategies import GaussianPoeStrategy, GaussianMoeStrategy, \
-		VmfPoeStrategy
+		VmfPoeStrategy, EnergyBasedModelStrategy
 VARIATIONAL_STRATEGY_MAP = {
 	'gaussian_poe': GaussianPoeStrategy,
 	'gaussian_moe': GaussianMoeStrategy,
 	'vmf_poe': VmfPoeStrategy,
+	'ebm': EnergyBasedModelStrategy,
 }
 VARIATIONAL_STRATEGY_KEYS = sorted(list(VARIATIONAL_STRATEGY_MAP.keys()))
 
 
 # Variational posteriors
 from .variational_posteriors import DiagonalGaussianPosterior, \
-		DiagonalGaussianMixturePosterior, VmfProductPosterior
+		DiagonalGaussianMixturePosterior, VmfProductPosterior, \
+		EnergyBasedModelPosterior
 VARIATIONAL_POSTERIOR_MAP = {
 	'diag_gaussian': DiagonalGaussianPosterior,
 	'diag_gaussian_mixture': DiagonalGaussianMixturePosterior,
 	'vmf_product': VmfProductPosterior,
+	'ebm': EnergyBasedModelPosterior,
 }
 VARIATIONAL_POSTERIOR_KEYS = sorted(list(VARIATIONAL_POSTERIOR_MAP.keys()))
 

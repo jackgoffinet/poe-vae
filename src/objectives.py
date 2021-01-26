@@ -133,23 +133,11 @@ class VaeObjective(torch.nn.Module):
 		# [b,k,z], [b,k], [b,k]
 		z_samples, log_qz, log_pz = \
 				self.encode(x, nan_mask, n_samples=n_samples)
-		if torch.isnan(log_qz).sum() > 0:
-			print("log_qz NaNs!")
-			quit()
-		if torch.isnan(log_pz).sum() > 0:
-			print("log_pz NaNs!")
-			quit()
 		log_likes = self.decode(z_samples, x, nan_mask) # [b,k]
-		if torch.isnan(log_likes).sum() > 0:
-			print("log_likes NaNs!")
-			quit()
 		if keepdim: # Keep the sample dimension.
 			return log_pz - log_qz + log_likes
 		est_log_m = torch.logsumexp(log_pz - log_qz + log_likes \
 				- np.log(n_samples), dim=1)
-		if torch.isnan(est_log_m).sum() > 0:
-			print("est_log_m NaNs!")
-			quit()
 		return est_log_m
 
 
@@ -295,6 +283,65 @@ class MmvaeQuadraticElbo(VaeObjective):
 		Stratified sampling ELBO from Shi et al. (2019), Eq. 3.
 
 		K samples are drawn from every mixture component. Uses DReG gradients.
+
+		Parameters
+		----------
+		x : torch.Tensor
+		"""
+		# Get missingness pattern, replace with zeros to prevent NaN gradients.
+		x, nan_mask = apply_nan_mask(x)
+		# Encode data.
+		var_dist_params = self.encoder(x) # [n_params][b,m,param_dim]
+		# Combine evidence.
+		var_post_params = self.variational_strategy(*var_dist_params, \
+				nan_mask=nan_mask)
+		# Make a variational posterior and sample.
+		z_samples, _ = self.variational_posterior(*var_post_params, \
+				n_samples=self.k) # [b,s,m,z]
+		# Evaluate prior.
+		log_pz = self.prior(z_samples) # [b,s,m]
+		# Now stop gradients through the encoder when evaluating log q(z|x).
+		detached_params = [param.detach() for param in var_post_params]
+		# [b,s,m]
+		log_qz = self.variational_posterior.log_prob(z_samples, \
+				*detached_params)
+		assert log_pz.shape[1] == self.k # assert k samples
+		assert log_qz.shape[1] == self.k # assert k samples
+		# Decode.
+		z_samples = z_samples.contiguous() # not ideal!
+		z_samples = z_samples.view(z_samples.shape[0],-1,z_samples.shape[3])
+		# [b,s,m]
+		log_likes = self.decode(z_samples, x, nan_mask).view(log_qz.shape)
+		assert log_likes.shape[1] == self.k # assert k samples
+		# Define importance weights.
+		# We're going to logsumexp over the sample dimension (K) and average
+		# over the modality dimension (M).
+		log_ws = log_pz + log_likes - log_qz - np.log(self.k) # [b,s,m]
+		with torch.no_grad():
+			weights = log_ws - torch.logsumexp(log_ws, dim=1, keepdim=True)
+			weights = torch.exp(weights) # [b,k,m]
+			def hook_func(grad):
+				return weights.view(grad.shape[0],-1).unsqueeze(-1) * grad
+			z_samples.register_hook(hook_func)
+		# Evaluate loss.
+		elbo = torch.mean(torch.sum(weights * log_ws, dim=1), dim=1)
+		assert len(elbo.shape) == 1 and elbo.shape[0] == log_ws.shape[0]
+		loss = -torch.mean(elbo)
+		return loss
+
+
+
+class MmvaeLessQuadraticElbo(VaeObjective):
+
+	def __init__(self, vae, args):
+		raise NotImplementedError
+		super(MmvaeLessQuadraticElbo, self).__init__(vae)
+		self.k = args.K
+		self.M = args.dataset.n_modalities
+
+	def forward(self, x):
+		"""
+		Single sample per modality ELBO from Shi et al. (2019), Appendix B.
 
 		Parameters
 		----------

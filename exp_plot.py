@@ -19,9 +19,9 @@ AGG_FN = 'agg.pt'
 
 EXP_1 = { \
 	'title': 'MNIST Halves',
-	'dirs': ['67044527', '67241136', '67634354', '67830963', '77089584', '68548139', '13474357'],
-	'names': ['1vMF PoE', '2vMF PoE', '3vMF PoE', '4vMF PoE', 'Gaussian PoE', 'MMVAE MoE', 'IWAE Gaussian PoE'],
-	'colors': ['firebrick', 'orchid', 'mediumseagreen', 'hotpink', 'goldenrod', 'steelblue', 'peru'],
+	'dirs': ['67044527', '67241136', '67634354', '67830963', '77089584', '68548139', '13474357', '46032319'],
+	'names': ['1vMF PoE', '2vMF PoE', '3vMF PoE', '4vMF PoE', 'Gaussian PoE', 'MMVAE MoE', 'IWAE Gaussian PoE', 'EBM PoE'],
+	'colors': ['firebrick', 'orchid', 'mediumseagreen', 'hotpink', 'goldenrod', 'steelblue', 'peru', 'orange'],
 	'min_val': 100.0,
 }
 
@@ -33,14 +33,24 @@ EXP_2 = { \
 	'min_val': -700,
 }
 
+EXP_3 = { \
+	'title': 'MNIST MCAR',
+	'dirs': ['91139835', '91336444', '91729662', '91926271', '77591932', '54994305', '16284639'],
+	'names': ['1vMF PoE', '2vMF PoE', '3vMF PoE', '4vMF PoE', 'Gaussian PoE', 'IWAE Gaussian PoE', 'EBM PoE'],
+	'colors': ['firebrick', 'orchid', 'mediumseagreen', 'hotpink', 'goldenrod', 'peru', 'orange'],
+	'min_val': -500,
+}
+
 
 
 if __name__ == '__main__':
-	EXP = EXP_2
+	EXP = EXP_1
 	fig, ax = plt.subplots(figsize=(5,3))
 	min_value = EXP['min_val']
 
 	for exp_dir, exp_name, exp_color in zip(EXP['dirs'], EXP['names'], EXP['colors']):
+		if exp_name in ['1vMF PoE', '2vMF PoE', '4vMF PoE']:
+			continue
 		# Load run.
 		fn = os.path.join(LOGGING_DIR, exp_dir, AGG_FN)
 		if not os.path.isfile(fn):

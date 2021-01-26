@@ -1,6 +1,9 @@
 """
 Define variational posteriors.
 
+TO DO
+-----
+* EnergyBasedModelPosterior assumes a standard Gaussian prior. Generalize this!
 """
 __date__ = "January 2021"
 
@@ -8,8 +11,10 @@ __date__ = "January 2021"
 from math import log
 import torch
 from torch.distributions import Normal, OneHotCategorical
+import torch.nn.functional as F
 
 from .distributions.von_mises_fisher import VonMisesFisher
+from .gumbel_softmax import gumbel_softmax
 
 EPS = 1e-5
 
@@ -300,6 +305,139 @@ class VmfProductPosterior(AbstractVariationalPosterior):
 		"""
 		raise NotImplementedError
 
+
+
+class EnergyBasedModelPosterior(AbstractVariationalPosterior):
+
+	def __init__(self, args):
+		"""
+		EBM varitional posterior.
+
+		Includes a proposal network and a network mapping thetas and zs to
+		energies.
+		"""
+		super(EnergyBasedModelPosterior, self).__init__()
+		self.k = args.ebm_samples
+		self.e_1 = torch.nn.Linear(args.theta_dim+args.latent_dim, 16)
+		self.e_2 = torch.nn.Linear(16, 16)
+		self.e_3 = torch.nn.Linear(16, 1)
+		# proposal layer 1
+		self.pi_1 = torch.nn.Linear(args.theta_dim, 16)
+		# proposal layer 2a: mean
+		self.pi_mu = torch.nn.Linear(16, args.latent_dim)
+		# proposal layer2b: log std dev
+		self.pi_log_prec = torch.nn.Linear(16, args.latent_dim)
+		self.parameter_dim_func = lambda d: (args.theta_dim,)
+
+
+	def proposal_network(self, thetas, n_samples=1):
+		"""
+		Map thetas to a proposal distribution, sample, and evaluate log prob.
+
+		Parameters
+		----------
+		thetas : torch.Tensor
+			Shape: [b,m,theta_dim]
+		k : int
+
+		Returns
+		-------
+		samples : torch.Tensor
+			Shape: [b,s,k,z]
+		pi_log_prob : torch.Tensor
+			Shape: [b,s,k]
+		prior_log_prob : torch.Tensor
+			Shape: [b,s,k]
+		"""
+		# Sum over the modality dimension for exchangeability.
+		h = thetas.sum(dim=-2)
+		h = F.relu(self.pi_1(h))
+		mu = self.pi_mu(h)
+		prec = torch.exp(self.pi_log_prec(h)) + 1e-2
+		var = torch.reciprocal(1.0 + prec)
+		mu = var * prec * mu
+		dist = Normal(mu, torch.sqrt(var))
+		samples = dist.rsample(sample_shape=(n_samples,self.k))
+		pi_log_prob = dist.log_prob(samples).transpose(1,2).transpose(0,1)
+		samples = samples.transpose(1,2).transpose(0,1)
+		loc = torch.zeros(samples.shape[-1], device=samples.device)
+		scale = torch.ones_like(loc)
+		prior_log_prob = Normal(loc, scale).log_prob(samples).sum(dim=-1)
+		return samples, pi_log_prob.sum(dim=-1), prior_log_prob
+
+
+	def energy_network(self, thetas, z_samples):
+		"""
+		Map thetas and z's to scalar energies.
+
+		Parameters
+		----------
+		thetas : torch.Tensor
+			Shape: [b,m,theta_dim]
+		z_samples : torch.Tensor
+			Shape: [b,s,k,z]
+
+		Returns
+		-------
+		energies : torch.Tensor
+			Shape: [b,s,1]
+		"""
+		# Turn both into [b,m,s,k,*]
+		thetas = thetas.unsqueeze(2).unsqueeze(2)
+		thetas = thetas.expand(-1,-1,z_samples.shape[1],z_samples.shape[2],-1)
+		z_samples = z_samples.unsqueeze(1).expand(-1,thetas.shape[1],-1,-1,-1)
+		# Concatenate to [b,m,s,k,z+theta].
+		h = torch.cat([thetas,z_samples], dim=-1)
+		h = F.relu(self.e_1(h))
+		h = F.relu(self.e_2(h))
+		h = self.e_3(h).squeeze(-1)
+		return h
+
+
+	def forward(self, thetas, nan_mask, n_samples=1):
+		"""
+		Produce reparamaterized samples and evaluate their log probability.
+
+		Parameters
+		----------
+		thetas : torch.Tensor
+			Shape: [b,m,theta]
+		nan_mask : torch.Tensor
+			Shape: [b,m]
+		n_samples : int
+		transpose : bool
+
+		Returns
+		-------
+		samples : torch.Tensor
+			Samples from the distribution. Shape: [batch,s,z_dim]
+		log_prob : torch.Tensor
+			Log probability of samples under the distribution.
+			Shape: [batch,s]
+		"""
+		# Get proposal samples and log probs. [b,s,k,z], [b,s,k]
+		pi_samples, pi_log_prob, prior_log_prob = \
+				self.proposal_network(thetas, n_samples)
+		# Get energies.
+		energies = self.energy_network(thetas, pi_samples) # [b,m,s,k]
+		# Sum over the modality energies, applying the missingness mask.
+		temp_mask = (~nan_mask).float().unsqueeze(-1).unsqueeze(-1)
+		energies = energies * temp_mask # [b,m,s,k]
+		energies = energies.sum(dim=1) # [b,s,k]
+		# Calculate importance weights: [b,s,k]
+		log_iws = prior_log_prob - energies - pi_log_prob
+		# Sample.
+		z_one_hot = gumbel_softmax(log_iws) # [b,s,k]
+		# [b,s,k] -> [b,s,k,z]
+		z_mask = z_one_hot.unsqueeze(-1).expand(-1,-1,-1,pi_samples.shape[-1])
+		z_samples = torch.sum(pi_samples * z_mask, dim=2) # [b,s,z]
+		# Estimate log probability under the EBM.
+		# We're making the approximation q(z_i|x) \approx EBM(z_i) / avg(w_j)
+		avg_w = torch.logsumexp(log_iws-log(self.k), dim=-1) # [b,s]
+		ebm_zi = torch.sum(energies * z_one_hot, dim=-1) # [b,s]
+		log_probs = ebm_zi / avg_w # [b,s]
+		# Return.
+		return z_samples, log_probs
 
 
 if __name__ == '__main__':

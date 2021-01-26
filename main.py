@@ -73,7 +73,9 @@ parser.add_argument('-o', '--objective', type=str, default='elbo',
 
 # Other arguments.
 parser.add_argument('--K', type=int, default=10, metavar='K',
-					help='number of particles to use for IWAE (default: 10)')
+					help='number of particles for IWAE (default: 10)')
+parser.add_argument('--ebm-samples', type=int, default=10, metavar='K',
+					help='number of particles for IWAE (default: 10)')
 parser.add_argument('--batch-size', type=int, default=256, metavar='N',
 					help='batch size for data (default: 256)')
 parser.add_argument('--epochs', type=int, default=10, metavar='E',
@@ -84,6 +86,8 @@ parser.add_argument('--m-dim', type=int, default=4, metavar='K',
 					help='modality embedding dimension (default: 8)')
 parser.add_argument('--vmf-dim', type=int, default=2, metavar='K',
 					help='ambient dimension of vMF spheres (default: 2)')
+parser.add_argument('--theta-dim', type=int, default=4, metavar='K',
+					help='EBM parameter dimension (default: 4)')
 parser.add_argument('--obs-std-dev', type=float, default=0.1, metavar='L',
 					help='Observation standard deviation (default: 0.1)')
 parser.add_argument('--num-hidden-layers', type=int, default=2, metavar='H',
@@ -132,7 +136,7 @@ if args.pre_trained:
 		print("Couldn't find {} to load".format(agg_fn))
 else:
 	if os.path.exists(exp_dir):
-		# _ = input("Experiment path already exists! Continue? ")
+		_ = input("Experiment path already exists! Continue? ")
 		try:
 			os.remove(log_fn)
 		except FileNotFoundError:

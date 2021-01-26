@@ -9,6 +9,9 @@ This repo contains ...
 Test vMF PoE:
 python main.py -q vmf_product --latent-dim 20 --vmf-dim 3 -v vmf_poe -p uniform_hypershperical
 
+Test EBM PoE:
+python main.py -q ebm -v ebm -o iwae --K 1
+
 
 
 See also:

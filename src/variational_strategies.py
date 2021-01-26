@@ -206,6 +206,48 @@ class VmfPoeStrategy(AbstractVariationalStrategy):
 
 
 
+class EnergyBasedModelStrategy(AbstractVariationalStrategy):
+	EPS = 1e-5
+
+	def __init__(self, args):
+		"""
+		EBM strategy: just pass the energy function parameters to the EBM.
+
+		Parameters
+		----------
+		...
+		"""
+		super(EnergyBasedModelStrategy, self).__init__()
+
+	def forward(self, thetas, nan_mask=None):
+		"""
+
+
+		Parameters
+		----------
+		thetas (vectorized): list of torch.Tensor
+			Shape: ???
+		thetas (non-vectorized): list of torch.Tensor
+			Shape: [m][b,theta_dim]
+		nan_mask : torch.Tensor or list of torch.Tensor
+			Indicates where data is missing.
+
+		Returns
+		-------
+		thetas : torch.Tensor
+			Passed from input.
+		nan_mask : torch.Tensor
+			Passed from input.
+		"""
+		list_flag = type(thetas) == type([]) # not vectorized
+		if list_flag:
+			thetas = torch.stack(thetas, dim=1)
+			nan_mask = torch.stack(nan_mask, dim=1)
+		return thetas, nan_mask
+
+
+
+
 if __name__ == '__main__':
 	pass
 

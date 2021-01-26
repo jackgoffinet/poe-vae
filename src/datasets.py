@@ -212,15 +212,15 @@ class MnistMcarEncoder(torch.nn.Module):
 		self.embed_layer = EncoderModalityEmbedding(self.m, embed_dim)
 		self.mlp = MLP([self.m_dim+embed_dim]+[hidden_dim]*n_hidden_layers, \
 				activation=activation, last_activation=True)
-		self.split_layer = SplitLinearLayer(hidden_dim+embed_dim, out_dims)
+		self.split_layer = SplitLinearLayer(hidden_dim+embed_dim, out_dims) # NOTE: HERE!
 
 
 	def forward(self, x):
 		x = self.embed_layer(x)
 		x = self.mlp(x)
 		x = self.embed_layer(x)
-		x,y = self.split_layer(x)
-		return x, y
+		x = self.split_layer(x)
+		return x
 
 
 
