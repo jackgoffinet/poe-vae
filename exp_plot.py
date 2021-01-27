@@ -19,49 +19,17 @@ AGG_FN = 'agg.pt'
 
 EXP_1 = { \
 	'title': 'MNIST Halves',
-	'dirs': ['67044527', '67241136', '67634354', '67830963', '77089584', '68548139', '13474357', '46032319'],
-	'names': ['1vMF PoE', '2vMF PoE', '3vMF PoE', '4vMF PoE', 'Gaussian PoE', 'MMVAE MoE', 'IWAE Gaussian PoE', 'EBM PoE'],
-	'colors': ['firebrick', 'orchid', 'mediumseagreen', 'hotpink', 'goldenrod', 'steelblue', 'peru', 'orange'],
-	'min_val': 100.0,
+	'dirs': ['13104539', '74249631', '12929771', '74337007', '53204748', '81921340'],
+	'names': ['20vMF', None, 'Gaussian', None, 'EBM', None],
+	'colors': ['firebrick', 'firebrick', 'darkorchid', 'darkorchid', 'mediumseagreen', 'mediumseagreen'],
+	'min_val': 200.0,
 }
 
-EXP_2 = { \
-	'title': 'MNIST MCAR', # Short run
-	'dirs': ['27367119', '27563728', '27956946', '28153555', '08052048', '77052245'],
-	'names': ['1vMF PoE', '2vMF PoE', '3vMF PoE', '4vMF PoE', 'Gaussian PoE', 'IWAE Gaussian PoE'],
-	'colors': ['firebrick', 'orchid', 'mediumseagreen', 'hotpink', 'goldenrod', 'peru'],
-	'min_val': -700,
-}
-
-EXP_3 = { \
-	'title': 'MNIST MCAR', # Long run
-	'dirs': ['91139835', '91336444', '91729662', '91926271', '77591932', '54994305', '16284639'],
-	'names': ['1vMF PoE', '2vMF PoE', '3vMF PoE', '4vMF PoE', 'Gaussian PoE', 'IWAE Gaussian PoE', 'EBM PoE'],
-	'colors': ['firebrick', 'orchid', 'mediumseagreen', 'hotpink', 'goldenrod', 'peru', 'orange'],
-	'min_val': -500,
-}
-
-EXP_4 = { \
-	'title': 'MNIST Halves',
-	'dirs': ['99088720', '99678547', '93282000', '66259403', '45031893', '02655425'],
-	'names': ['3vMF PoE', '5vMF PoE', 'Gaussian PoE', 'MMVAE MoE', 'IWAE Gaussian PoE', 'EBM PoE'],
-	'colors': ['firebrick', 'orchid', 'mediumseagreen', 'hotpink', 'goldenrod', 'orange'],
-	'min_val': 100.0,
-}
-
-
-EXP_5 = { \
-	'title': 'MNIST MCAR', # Long run
-	'dirs': ['13488496', '14078323', '78321648', '56671221', '72907745'],
-	'names': ['3vMF PoE', '5vMF PoE', 'Gaussian PoE', 'IWAE Gaussian PoE', 'EBM PoE'],
-	'colors': ['firebrick', 'orchid', 'mediumseagreen', 'goldenrod', 'orange'],
-	'min_val': -500,
-}
 
 
 
 if __name__ == '__main__':
-	EXP = EXP_5
+	EXP = EXP_1
 	fig, ax = plt.subplots(figsize=(5,3))
 	min_value = EXP['min_val']
 

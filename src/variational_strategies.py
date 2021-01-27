@@ -206,7 +206,7 @@ class VmfPoeStrategy(AbstractVariationalStrategy):
 
 
 
-class EnergyBasedModelStrategy(AbstractVariationalStrategy):
+class EbmStrategy(AbstractVariationalStrategy):
 	EPS = 1e-5
 
 	def __init__(self, args):
@@ -217,7 +217,7 @@ class EnergyBasedModelStrategy(AbstractVariationalStrategy):
 		----------
 		...
 		"""
-		super(EnergyBasedModelStrategy, self).__init__()
+		super(EbmStrategy, self).__init__()
 
 	def forward(self, thetas, nan_mask=None):
 		"""
@@ -245,6 +245,76 @@ class EnergyBasedModelStrategy(AbstractVariationalStrategy):
 			nan_mask = torch.stack(nan_mask, dim=1)
 		return thetas, nan_mask
 
+
+
+class LocScaleEbmStrategy(AbstractVariationalStrategy):
+	EPS = 1e-5
+
+	def __init__(self, args):
+		"""
+		Location/Scale EBM strategy: multiply the Gaussian proposals
+
+		The other EBM parameters, the thetas, are simply passed. The NaN mask
+		is also passed.
+
+		Parameters
+		----------
+		...
+		"""
+		super(LocScaleEbmStrategy, self).__init__()
+
+	def forward(self, thetas, means, log_precisions, nan_mask=None):
+		"""
+		Multiply the Gaussian proposals. The other EBM parameters, the thetas,
+		are simply passed. The NaN mask is also passed.
+
+		Parameters
+		----------
+		thetas (vectorized): list of torch.Tensor
+			Shape: ???
+		thetas (non-vectorized): list of torch.Tensor
+			Shape: [m][b,theta_dim]
+		means : list of torch.Tensor
+			means[modality] shape: [batch, z_dim]
+		log_precisions : list of torch.Tensor
+			log_precisions[modality] shape: [batch, z_dim]
+		nan_mask : torch.Tensor or list of torch.Tensor
+			Indicates where data is missing.
+
+		Returns
+		-------
+		thetas : torch.Tensor
+			Shape: [batch, m, theta_dim]
+		mean : torch.Tensor
+			Shape: [batch, z_dim]
+		precision : torch.Tensor
+			Shape: [batch, z_dim]
+		means : torch.Tensor
+			Shape: [batch, m, z_dim]
+		precisions : torch.Tensor
+			Shape: [batch, m, z_dim]
+		nan_mask : torch.Tensor
+			Shape : [b,m]
+		"""
+		list_flag = type(means) == type([]) # not vectorized
+		if list_flag:
+			thetas = torch.stack(thetas, dim=1)
+			nan_mask = torch.stack(nan_mask, dim=1)
+			means = torch.stack(means, dim=1) # [b,m,z]
+			log_precisions = torch.stack(log_precisions, dim=1)
+			precisions = log_precisions.exp() # [b,m,z]
+		else:
+			precisions = log_precisions.exp()
+		if nan_mask is not None:
+			assert len(precisions.shape) == 3
+			temp_mask = (~nan_mask).float().unsqueeze(-1)
+			temp_mask = temp_mask.expand(-1,-1,precisions.shape[2])
+			precisions = precisions * temp_mask
+		# Combine all the experts. Include the 1.0 for the prior expert!
+		precision = torch.sum(precisions, dim=1) + 1.0 # [b,z_dim]
+		prec_mean = torch.sum(means * precisions, dim=1) # [b,z_dim]
+		mean = prec_mean / (precision + self.EPS)
+		return thetas, mean, precision, means, precisions, nan_mask
 
 
 

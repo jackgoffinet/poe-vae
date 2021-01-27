@@ -48,7 +48,7 @@ def gumbel_softmax(logits, temperature=1.0, hard=True):
 				y_hard.scatter_(1, ind.view(-1, 1), 1)
 				res.append(y_hard)
 			y_hard = torch.stack(res, dim=1)
-		# Set gradients w.r.t. y_hard gradients w.r.t. y
+		# Set gradients w.r.t. y_hard equal to gradients w.r.t. y
 		y_hard = (y_hard - y).detach() + y
 		return y_hard
 	return y

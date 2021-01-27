@@ -24,12 +24,13 @@ ENCODER_DECODER_KEYS = sorted(list(ENCODER_DECODER_MAP.keys()))
 
 # Variational strategies
 from .variational_strategies import GaussianPoeStrategy, GaussianMoeStrategy, \
-		VmfPoeStrategy, EnergyBasedModelStrategy
+		VmfPoeStrategy, EbmStrategy, LocScaleEbmStrategy
 VARIATIONAL_STRATEGY_MAP = {
 	'gaussian_poe': GaussianPoeStrategy,
 	'gaussian_moe': GaussianMoeStrategy,
 	'vmf_poe': VmfPoeStrategy,
-	'ebm': EnergyBasedModelStrategy,
+	'ebm': EbmStrategy,
+	'loc_scale_ebm': LocScaleEbmStrategy,
 }
 VARIATIONAL_STRATEGY_KEYS = sorted(list(VARIATIONAL_STRATEGY_MAP.keys()))
 
@@ -37,12 +38,13 @@ VARIATIONAL_STRATEGY_KEYS = sorted(list(VARIATIONAL_STRATEGY_MAP.keys()))
 # Variational posteriors
 from .variational_posteriors import DiagonalGaussianPosterior, \
 		DiagonalGaussianMixturePosterior, VmfProductPosterior, \
-		EnergyBasedModelPosterior
+		EbmPosterior, LocScaleEbmPosterior
 VARIATIONAL_POSTERIOR_MAP = {
 	'diag_gaussian': DiagonalGaussianPosterior,
 	'diag_gaussian_mixture': DiagonalGaussianMixturePosterior,
 	'vmf_product': VmfProductPosterior,
-	'ebm': EnergyBasedModelPosterior,
+	'ebm': EbmPosterior,
+	'loc_scale_ebm': LocScaleEbmPosterior,
 }
 VARIATIONAL_POSTERIOR_KEYS = sorted(list(VARIATIONAL_POSTERIOR_MAP.keys()))
 

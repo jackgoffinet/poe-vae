@@ -307,7 +307,7 @@ class VmfProductPosterior(AbstractVariationalPosterior):
 
 
 
-class EnergyBasedModelPosterior(AbstractVariationalPosterior):
+class EbmPosterior(AbstractVariationalPosterior):
 
 	def __init__(self, args):
 		"""
@@ -315,8 +315,11 @@ class EnergyBasedModelPosterior(AbstractVariationalPosterior):
 
 		Includes a proposal network and a network mapping thetas and zs to
 		energies.
+
+		TO DO:
+		* double check this, make sure it's consistent with LocScaleEbmPosterior
 		"""
-		super(EnergyBasedModelPosterior, self).__init__()
+		super(EbmPosterior, self).__init__()
 		self.k = args.ebm_samples
 		self.e_1 = torch.nn.Linear(args.theta_dim+args.latent_dim, 16)
 		self.e_2 = torch.nn.Linear(16, 16)
@@ -351,26 +354,14 @@ class EnergyBasedModelPosterior(AbstractVariationalPosterior):
 		"""
 		# Sum over the modality dimension for exchangeability.
 		h = thetas.sum(dim=-2)
-		if torch.isnan(h).sum() > 0:
-			print("p h NaN!")
 		h = F.relu(self.pi_1(h))
 		mu = self.pi_mu(h)
 		prec = torch.exp(self.pi_log_prec(h)) + 1e-2
-		if torch.isnan(prec).sum() > 0:
-			print("p prec NaN!")
 		var = torch.reciprocal(1.0 + prec)
-		if torch.isnan(var).sum() > 0:
-			print("p var NaN!")
 		mu = var * prec * mu
-		if torch.isnan(mu).sum() > 0:
-			print("p mu NaN!")
 		std_dev = torch.sqrt(var)
-		if torch.isnan(std_dev).sum() > 0:
-			print("p std_dev NaN!")
 		dist = Normal(mu, torch.sqrt(var))
 		samples = dist.rsample(sample_shape=(n_samples,self.k))
-		if torch.isnan(samples).sum() > 0:
-			print("p samples NaN!")
 		pi_log_prob = dist.log_prob(samples).transpose(1,2).transpose(0,1)
 		samples = samples.transpose(1,2).transpose(0,1)
 		loc = torch.zeros(samples.shape[-1], device=samples.device)
@@ -428,17 +419,9 @@ class EnergyBasedModelPosterior(AbstractVariationalPosterior):
 			Log probability of samples under the distribution.
 			Shape: [batch,s]
 		"""
-		if torch.isnan(thetas).sum() > 0:
-			print("vp forward theta NaN!")
 		# Get proposal samples and log probs. [b,s,k,z], [b,s,k]
 		pi_samples, pi_log_prob, prior_log_prob = \
 				self.proposal_network(thetas, n_samples)
-		if torch.isnan(pi_samples).sum() > 0:
-			print("pi_samples NaN!")
-		if torch.isnan(pi_log_prob).sum() > 0:
-			print("pi_log_prob NaN!")
-		if torch.isnan(prior_log_prob).sum() > 0:
-			print("prior_log_prob NaN!")
 		# Get energies.
 		energies = self.energy_network(thetas, pi_samples) # [b,m,s,k]
 		# Sum over the modality energies, applying the missingness mask.
@@ -459,10 +442,165 @@ class EnergyBasedModelPosterior(AbstractVariationalPosterior):
 		log_avg_w = torch.logsumexp(log_iws, dim=-1) - log(self.k) # [b,s]
 		e_zi = torch.sum(energies * z_one_hot, dim=-1) # [b,s]
 		log_probs = - e_zi - log_avg_w
-		if torch.isnan(log_probs).sum() > 0:
-			print("ebm log_prob NaN!")
-		# Return.
 		return z_samples, log_probs
+
+
+
+class LocScaleEbmPosterior(AbstractVariationalPosterior):
+
+	def __init__(self, args):
+		"""
+		Location/scale EBM varitional posterior.
+
+		Includes a proposal network and a network mapping thetas and zs to
+		energies.
+		"""
+		super(LocScaleEbmPosterior, self).__init__()
+		self.k = args.ebm_samples
+		# Energy network: (theta,z) -> energy
+		self.e_1 = torch.nn.Linear(args.theta_dim+args.latent_dim, 16)
+		self.e_2 = torch.nn.Linear(16, 16)
+		self.e_3 = torch.nn.Linear(16, 1)
+		self.parameter_dim_func = \
+				lambda d: (args.theta_dim,args.latent_dim,args.latent_dim)
+
+
+	def proposal_network(self, thetas, n_samples=1):
+		"""
+		Map thetas to a proposal distribution, sample, and evaluate log prob.
+
+		Parameters
+		----------
+		thetas : torch.Tensor
+			Shape: [b,m,theta_dim]
+		k : int
+
+		Returns
+		-------
+		samples : torch.Tensor
+			Shape: [b,s,k,z]
+		pi_log_prob : torch.Tensor
+			Shape: [b,s,k]
+		prior_log_prob : torch.Tensor
+			Shape: [b,s,k]
+		"""
+		# Sum over the modality dimension for exchangeability.
+		h = thetas.sum(dim=-2)
+		h = F.relu(self.pi_1(h))
+		mu = self.pi_mu(h)
+		prec = torch.exp(self.pi_log_prec(h)) + 1e-2
+		var = torch.reciprocal(1.0 + prec)
+		mu = var * prec * mu
+		std_dev = torch.sqrt(var)
+		dist = Normal(mu, torch.sqrt(var))
+		samples = dist.rsample(sample_shape=(n_samples,self.k))
+		pi_log_prob = dist.log_prob(samples).transpose(1,2).transpose(0,1)
+		samples = samples.transpose(1,2).transpose(0,1)
+		loc = torch.zeros(samples.shape[-1], device=samples.device)
+		scale = torch.ones_like(loc)
+		prior_log_prob = Normal(loc, scale).log_prob(samples).sum(dim=-1)
+		return samples, pi_log_prob.sum(dim=-1), prior_log_prob
+
+
+	def energy_network(self, thetas, samples):
+		"""
+		Map thetas and z's to scalar energies.
+
+		Parameters
+		----------
+		thetas : torch.Tensor
+			Shape: [b,m,theta_dim]
+		samples : torch.Tensor
+			Standardized latent samples. Shape: [b,m,s,k,z] # NOTE
+
+		Returns
+		-------
+		energies : torch.Tensor
+			Shape: [b,m,s,k]
+		"""
+		# Turn both into [b,m,s,k,*]
+		thetas = thetas.unsqueeze(2).unsqueeze(2) # [b,m,1,1,theta]
+		thetas = thetas.expand(-1,-1,samples.shape[2],samples.shape[3],-1)
+		# Concatenate to [b,m,s,k,z+theta].
+		h = torch.cat([thetas,samples], dim=-1)
+		h = F.relu(self.e_1(h))
+		h = F.relu(self.e_2(h))
+		h = self.e_3(h).squeeze(-1) # [b,m,s,k]
+		return h
+
+
+	def forward(self, thetas, mean, precision, means, precisions, nan_mask, \
+		n_samples=1):
+		"""
+		Produce reparamaterized samples and evaluate their log probability.
+
+		Parameters
+		----------
+		thetas : torch.Tensor
+			Shape: [b,m,theta]
+		mean : torch.Tensor
+			Proposal mean. Shape: [b,z_dim]
+		precision : torch.Tensor
+			Proposal precision. Shape: [b,z_dim]
+		means : torch.Tensor
+			Modality-specific means. Shape: [b,m,z_dim]
+		precisions : torch.Tensor
+			Modality-specific precision. Shape: [b,m,z_dim]
+		nan_mask : torch.Tensor
+			Shape: [b,m]
+		n_samples : int
+		transpose : bool
+
+		Returns
+		-------
+		samples : torch.Tensor
+			Samples from the distribution. Shape: [batch,s,z_dim]
+		log_prob : torch.Tensor
+			Log probability of samples under the distribution.
+			Shape: [batch,s]
+		"""
+		# Make proposal distribution.
+		std_dev = torch.reciprocal(torch.sqrt(precision) + 1e-5)
+		pi_dist = Normal(mean, std_dev)
+		# Get proposal samples and log probs: [s,k,b,z], [s,k,b,z]
+		pi_samples = pi_dist.rsample(sample_shape=(n_samples,self.k))
+		pi_log_prob = pi_dist.log_prob(pi_samples)
+		# [s,k,b,z] -> [b,s,k,z]
+		pi_samples = pi_samples.transpose(1,2).transpose(0,1)
+		# [s,k,b,z] -> [b,s,k]
+		pi_log_prob = pi_log_prob.transpose(1,2).transpose(0,1).sum(dim=-1)
+		# Standardize the proposal samples in each modality-specific ref. frame.
+		std_pi_samples = pi_samples.unsqueeze(1) - \
+				means.unsqueeze(2).unsqueeze(2)
+		std_pi_samples = std_pi_samples * \
+				(precisions.unsqueeze(2).unsqueeze(2) + 1e-5).sqrt() # [b,m,s,k,z]
+		# Get energies: [b,m,s,k]
+		energies = 0.1 * self.energy_network(thetas, std_pi_samples)
+		# Sum over the modality energies, applying the missingness mask.
+		temp_mask = (~nan_mask).float().unsqueeze(-1).unsqueeze(-1) # [b,m,1,1]
+		energies = energies * temp_mask # [b,m,s,k]
+		energies = energies.sum(dim=1) # [b,s,k]
+		# OK -- if e is the output of the energy network, we're targeting the
+		# density \propto exp[-e(z)]pi(z) so that the proposal pi can regularize
+		# things. Then our target energy is E \equiv e(z) - log pi(z), but our
+		# importance weights are exp(-E(z))/pi(z), which is just exp(-e(z)).
+		#
+		# Calculate importance weights and energies.
+		log_iws = - energies # [b,s,k]
+		energies = energies - pi_log_prob # [b,s,k]
+		# Sample.
+		z_one_hot = gumbel_softmax(log_iws) # [b,s,k], last dim is one-hot
+		# [b,s,k] -> [b,s,k,z]
+		z_mask = z_one_hot.unsqueeze(-1).expand(-1,-1,-1,pi_samples.shape[-1])
+		z_samples = torch.sum(pi_samples * z_mask, dim=2) # [b,s,z]
+		# Estimate log probability under the EBM.
+		# We're making the approximation q(z_i|x) \approx EBM(z_i) / avg(w_j)
+		# => log q(z_i|x) \approx -E(z_i) - logavgexp(w_j)
+		log_avg_w = torch.logsumexp(log_iws, dim=-1) - log(self.k) # [b,s]
+		e_zi = torch.sum(energies * z_one_hot, dim=-1) # [b,s]
+		log_probs = - e_zi - log_avg_w
+		return z_samples, log_probs
+
 
 
 if __name__ == '__main__':

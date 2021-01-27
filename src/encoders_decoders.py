@@ -75,27 +75,7 @@ class MLP(torch.nn.Module):
 		----------
 		x : torch.Tensor
 		"""
-		if torch.isnan(x).sum() > 0:
-			print("MLP forward NaN!")
-		j = 0
-		while j < 10:
-			temp = self.net(x)
-			if torch.isnan(temp).sum() > 0: # VERY ODD BUG!!!
-				print("MLP forward")
-				self.zero_grad()
-				with torch.no_grad():
-					param_vector = parameters_to_vector(self.parameters())
-					param_vector.add_(1e-2 * torch.randn_like(param_vector))
-					vector_to_parameters(param_vector, self.parameters())
-				temp = torch.zeros_like(temp)
-				if torch.isnan(temp).sum() > 0:
-					print("HOW THE HELL?!?!?!")
-					quit()
-				j += 1
-				continue
-			return temp
-		quit()
-		return temp
+		return self.net(x)
 
 
 

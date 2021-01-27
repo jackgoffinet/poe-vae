@@ -20,20 +20,25 @@ from .encoders_decoders import MLP, SplitLinearLayer, EncoderModalityEmbedding,\
 GENERATE_FN = 'generations.pdf'
 TRAIN_RECONSTRUCT_FN = 'train_reconstructions.pdf'
 TEST_RECONSTRUCT_FN = 'test_reconstructions.pdf'
-# MNIST_DEFAULT_FN = '/media/jackg/Jacks_Animal_Sounds/datasets/mnist_train.csv'
-MNIST_DEFAULT_FN = '/media/jackg/Jacks_Animal_Sounds/datasets/mnist_test.csv'
-print("Using temporary MNIST data!")
+MNIST_TRAIN_FN = '/media/jackg/Jacks_Animal_Sounds/datasets/mnist_train.csv'
+MNIST_TEST_FN = '/media/jackg/Jacks_Animal_Sounds/datasets/mnist_test.csv'
+# print("Using temporary MNIST data!")
 
 
 
-def load_mnist_data(data_fn):
+def load_mnist_data(data_fn, mode):
 	"""
 	Load MNIST from a .csv file.
 
 	TO DO: toggle between binarized and real-valued input
 	"""
 	if data_fn == '':
-		data_fn = MNIST_DEFAULT_FN
+		if mode == 'train':
+			data_fn = MNIST_TRAIN_FN
+		elif mode == 'test':
+			data_fn = MNIST_TEST_FN
+		else:
+			raise NotImplementedError
 	d = np.loadtxt(data_fn, delimiter=',')
 	images, labels = d[:,1:]/255, np.array(d[:,0], dtype='int')
 	return images, labels
@@ -119,7 +124,8 @@ class MnistHalvesDataset(Dataset):
 	encoder_c = MnistHalvesEncoder
 	decoder_c = MnistHalvesDecoder
 
-	def __init__(self, data_fn, device, missingness=0.5, digits=(0,1,2,3,4,5,6,7,8,9)):
+	def __init__(self, data_fn, device, missingness=0.5, \
+		digits=(0,1,2,3,4,5,6,7,8,9), mode='train'):
 		"""
 		MNIST data with the top and bottom halves treated as two modalities.
 
@@ -133,7 +139,7 @@ class MnistHalvesDataset(Dataset):
 		self.device = device
 		self.missingness = missingness
 		self.digits = digits
-		images, labels = load_mnist_data(data_fn)
+		images, labels = load_mnist_data(data_fn, mode)
 		idx = [np.argwhere(labels == digit).flatten() for digit in digits]
 		idx = np.concatenate(idx)
 		images = images[idx]
@@ -273,7 +279,8 @@ class MnistMcarDataset(Dataset):
 	encoder_c = MnistMcarEncoder
 	decoder_c = MnistMcarDecoder
 
-	def __init__(self, data_fn, device, missingness=0.5, digits=(0,1,2,3,4,5,6,7,8,9)):
+	def __init__(self, data_fn, device, missingness=0.5, \
+		digits=(0,1,2,3,4,5,6,7,8,9), mode='train'):
 		"""
 		MNIST data with pixels missing completely at random.
 
@@ -287,7 +294,7 @@ class MnistMcarDataset(Dataset):
 		self.device = device
 		self.missingness = missingness
 		self.digits = digits
-		images, labels = load_mnist_data(data_fn)
+		images, labels = load_mnist_data(data_fn, mode)
 		idx = [np.argwhere(labels == digit).flatten() for digit in digits]
 		idx = np.concatenate(idx)
 		images = images[idx]

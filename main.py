@@ -108,6 +108,14 @@ parser.add_argument('--data-fn', type=str, default='',
 					help='data filename')
 parser.add_argument('--clip', type=float, default=1e3,
 					help='Max gradient norm (default: 1e3)')
+parser.add_argument('--train-data-fn', type=str, default='',
+					help='training data filename')
+parser.add_argument('--test-data-fn', type=str, default='',
+					help='test data filename')
+parser.add_argument('--train-m', type=float, default=0.5,
+					help='Training set missingness (default: 0.5)')
+parser.add_argument('--test-m', type=float, default=0.0,
+					help='Test set missingness (default: 0.0)')
 
 
 # Parse and print args.
@@ -174,6 +182,9 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 args.device = torch.device("cuda" if args.cuda else "cpu")
 
 
+def get_grad_norm(obj):
+	return sum(p.grad.data.norm(2).item()**2 for p in obj.parameters()) ** 0.5
+
 
 def train_epoch(objective, loader, optimizer, epoch, agg):
 	"""
@@ -192,7 +203,7 @@ def train_epoch(objective, loader, optimizer, epoch, agg):
 			print("NaN Loss!")
 			quit()
 		loss.backward()
-		torch.nn.utils.clip_grad_norm_(objective.parameters(), args.clip)
+		# torch.nn.utils.clip_grad_norm_(objective.parameters(), args.clip)
 		optimizer.step()
 		b_loss += loss.item() * get_batch_len(batch)
 	agg['train_loss'].append(b_loss / len(loader.dataset))
@@ -244,7 +255,7 @@ def get_batch_len(batch):
 	return len(batch) # vectorized modalities
 
 
-def estimate_marginal_log_like(objective, loader, k=1000, mini_k=50, \
+def estimate_marginal_log_like(objective, loader, k=2000, mini_k=128, \
 	reduction='mean'):
 	"""
 	Simple log marginal estimation.
@@ -252,7 +263,7 @@ def estimate_marginal_log_like(objective, loader, k=1000, mini_k=50, \
 	Take the approximate posterior as a proposal distribution, do an
 	importance-weighted estimate.
 
-	TO DO: do this in batches
+	TO DO: try/except blocks with decreasing mini_k
 
 	Parameters
 	----------
@@ -266,17 +277,24 @@ def estimate_marginal_log_like(objective, loader, k=1000, mini_k=50, \
 	-------
 	est_mll : float
 	"""
-	assert k % mini_k == 0, "k should be divisible by mini_k"
 	assert reduction in ['sum', 'mean']
-	num_inner_batches = k // mini_k
 	batch_res = []
 	with torch.no_grad():
 		for i, batch in enumerate(loader):
 			inner_batch_res = []
-			for j in range(num_inner_batches):
-				log_l = objective.estimate_marginal_log_like(batch, \
-						n_samples=mini_k, keepdim=True)
-				inner_batch_res.append(log_l)
+			j = 0
+			while j < k:
+				temp_mini_k = min(k-j, mini_k)
+				try:
+					log_l = objective.estimate_marginal_log_like(batch, \
+							n_samples=temp_mini_k, keepdim=True)
+					j += temp_mini_k
+					inner_batch_res.append(log_l)
+				except RuntimeError: # CUDA out of memory
+					if mini_k == 1:
+						print("MLL failed!")
+						quit()
+					mini_k //= 2
 			log_m = torch.cat(inner_batch_res, dim=1) - np.log(k)
 			log_m = torch.logsumexp(log_m, dim=1)
 			batch_res.append(log_m)
@@ -287,7 +305,7 @@ def estimate_marginal_log_like(objective, loader, k=1000, mini_k=50, \
 	return np.mean(batch_res)
 
 
-def mll_helper(bjective, dataloaders, epoch, agg):
+def mll_helper(bjective, dataloaders, epoch, agg, train_mll=False):
 	"""Estimate marginal log likelihoods."""
 	tic = perf_counter()
 	mll = estimate_marginal_log_like(objective, dataloaders['test'])
@@ -295,12 +313,13 @@ def mll_helper(bjective, dataloaders, epoch, agg):
 	agg['test_mll'].append(mll)
 	agg['test_mll_epoch'].append(epoch)
 	print("Test MLL: ", mll, ", time:", round(toc-tic,2))
-	tic = perf_counter()
-	mll = estimate_marginal_log_like(objective, dataloaders['train'])
-	toc = perf_counter()
-	agg['train_mll'].append(mll)
-	agg['train_mll_epoch'].append(epoch)
-	print("Train MLL time:", mll, ", time:", round(toc-tic,2))
+	if train_mll:
+		tic = perf_counter()
+		mll = estimate_marginal_log_like(objective, dataloaders['train'])
+		toc = perf_counter()
+		agg['train_mll'].append(mll)
+		agg['train_mll_epoch'].append(epoch)
+		print("Train MLL time:", mll, ", time:", round(toc-tic,2))
 
 
 def save_aggregator(agg):
@@ -340,7 +359,7 @@ if __name__ == '__main__':
 		train_epoch(objective, dataloaders['train'], optimizer, epoch, agg)
 		if epoch % args.test_freq == 0:
 			test_epoch(objective, dataloaders['test'], epoch, agg)
-		if epoch % args.mll_freq == 0:
+		if epoch % args.mll_freq == 0 or epoch == prev_epochs + args.epochs:
 			mll_helper(objective, dataloaders, epoch, agg)
 	epoch = prev_epochs + args.epochs
 
@@ -348,7 +367,7 @@ if __name__ == '__main__':
 	save_aggregator(agg)
 
 	# Plot reconstructions and generations.
-	datasets['train'].dataset.make_plots(model, datasets, dataloaders, exp_dir)
+	datasets['train'].make_plots(model, datasets, dataloaders, exp_dir)
 
 	# Save the model/objective.
 	save_state(objective, optimizer, epoch)

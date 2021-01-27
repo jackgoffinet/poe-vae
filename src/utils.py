@@ -59,11 +59,9 @@ class Logger(object):
 
 
 
-def make_datasets(args, train_ratio=0.8):
+def make_datasets(args):
 	"""
 	Make train and test Datasets.
-
-	Note: generator should already be seeded -- check this
 
 	Parameters
 	----------
@@ -75,12 +73,11 @@ def make_datasets(args, train_ratio=0.8):
 	datasets : dict
 		Maps the keys 'train' and 'test' to respective Datasets.
 	"""
-	big_dataset = args.dataset(args.data_fn, args.device)
-	train_len = int(round(train_ratio * len(big_dataset)))
-	test_len = len(big_dataset) - train_len
-	dset_splits = \
-			torch.utils.data.random_split(big_dataset, [train_len,test_len]) # NOTE: HERE
-	return {'train': dset_splits[0], 'test': dset_splits[1]}
+	train_dataset = args.dataset(args.train_data_fn, args.device, \
+			missingness=args.train_m, mode='train')
+	test_dataset = args.dataset(args.test_data_fn, args.device, \
+			missingness=args.test_m, mode='test')
+	return {'train': train_dataset, 'test': test_dataset}
 
 
 def make_dataloaders(datasets, batch_size):
