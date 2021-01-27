@@ -351,13 +351,26 @@ class EnergyBasedModelPosterior(AbstractVariationalPosterior):
 		"""
 		# Sum over the modality dimension for exchangeability.
 		h = thetas.sum(dim=-2)
+		if torch.isnan(h).sum() > 0:
+			print("p h NaN!")
 		h = F.relu(self.pi_1(h))
 		mu = self.pi_mu(h)
 		prec = torch.exp(self.pi_log_prec(h)) + 1e-2
+		if torch.isnan(prec).sum() > 0:
+			print("p prec NaN!")
 		var = torch.reciprocal(1.0 + prec)
+		if torch.isnan(var).sum() > 0:
+			print("p var NaN!")
 		mu = var * prec * mu
+		if torch.isnan(mu).sum() > 0:
+			print("p mu NaN!")
+		std_dev = torch.sqrt(var)
+		if torch.isnan(std_dev).sum() > 0:
+			print("p std_dev NaN!")
 		dist = Normal(mu, torch.sqrt(var))
 		samples = dist.rsample(sample_shape=(n_samples,self.k))
+		if torch.isnan(samples).sum() > 0:
+			print("p samples NaN!")
 		pi_log_prob = dist.log_prob(samples).transpose(1,2).transpose(0,1)
 		samples = samples.transpose(1,2).transpose(0,1)
 		loc = torch.zeros(samples.shape[-1], device=samples.device)
@@ -380,7 +393,7 @@ class EnergyBasedModelPosterior(AbstractVariationalPosterior):
 		Returns
 		-------
 		energies : torch.Tensor
-			Shape: [b,s,1]
+			Shape: [b,m,s,k]
 		"""
 		# Turn both into [b,m,s,k,*]
 		thetas = thetas.unsqueeze(2).unsqueeze(2)
@@ -415,9 +428,17 @@ class EnergyBasedModelPosterior(AbstractVariationalPosterior):
 			Log probability of samples under the distribution.
 			Shape: [batch,s]
 		"""
+		if torch.isnan(thetas).sum() > 0:
+			print("vp forward theta NaN!")
 		# Get proposal samples and log probs. [b,s,k,z], [b,s,k]
 		pi_samples, pi_log_prob, prior_log_prob = \
 				self.proposal_network(thetas, n_samples)
+		if torch.isnan(pi_samples).sum() > 0:
+			print("pi_samples NaN!")
+		if torch.isnan(pi_log_prob).sum() > 0:
+			print("pi_log_prob NaN!")
+		if torch.isnan(prior_log_prob).sum() > 0:
+			print("prior_log_prob NaN!")
 		# Get energies.
 		energies = self.energy_network(thetas, pi_samples) # [b,m,s,k]
 		# Sum over the modality energies, applying the missingness mask.
@@ -425,17 +446,21 @@ class EnergyBasedModelPosterior(AbstractVariationalPosterior):
 		energies = energies * temp_mask # [b,m,s,k]
 		energies = energies.sum(dim=1) # [b,s,k]
 		# Calculate importance weights: [b,s,k]
+		# Following the EBM convention: p(x) \propto exp[-E(x)]
 		log_iws = prior_log_prob - energies - pi_log_prob
 		# Sample.
-		z_one_hot = gumbel_softmax(log_iws) # [b,s,k]
+		z_one_hot = gumbel_softmax(log_iws) # [b,s,k], last dim is one-hot
 		# [b,s,k] -> [b,s,k,z]
 		z_mask = z_one_hot.unsqueeze(-1).expand(-1,-1,-1,pi_samples.shape[-1])
 		z_samples = torch.sum(pi_samples * z_mask, dim=2) # [b,s,z]
 		# Estimate log probability under the EBM.
 		# We're making the approximation q(z_i|x) \approx EBM(z_i) / avg(w_j)
-		avg_w = torch.logsumexp(log_iws-log(self.k), dim=-1) # [b,s]
-		ebm_zi = torch.sum(energies * z_one_hot, dim=-1) # [b,s]
-		log_probs = ebm_zi / avg_w # [b,s]
+		# => log q(z_i|x) \approx -E(z_i) - logavgexp(w_j)
+		log_avg_w = torch.logsumexp(log_iws, dim=-1) - log(self.k) # [b,s]
+		e_zi = torch.sum(energies * z_one_hot, dim=-1) # [b,s]
+		log_probs = - e_zi - log_avg_w
+		if torch.isnan(log_probs).sum() > 0:
+			print("ebm log_prob NaN!")
 		# Return.
 		return z_samples, log_probs
 

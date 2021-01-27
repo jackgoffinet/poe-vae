@@ -59,9 +59,26 @@ class MnistHalvesEncoder(torch.nn.Module):
 		self.net_2 = torch.nn.Sequential(mlp_2, split_2)
 
 	def forward(self, xs):
+		"""
+		Parameters
+		----------
+
+		Returns
+		-------
+
+		"""
+		if torch.isnan(xs[0]).sum() > 0:
+			print("xs[0] NaN!")
+		if torch.isnan(xs[1]).sum() > 0:
+			print("xs[1] NaN!")
 		assert len(xs) == self.m
 		assert xs[0].shape[-1] == self.m_dim
 		out_1, out_2 = self.net_1(xs[0]), self.net_2(xs[1])
+		if torch.isnan(out_1[0]).sum() > 0:
+			print("out_1[0] NaN!")
+			print(type(out_1), type(out_1[0]))
+		if torch.isnan(out_2[0]).sum() > 0:
+			print("out_2[0] NaN!")
 		# Pair like parameters.
 		return [[i,j] for i,j in zip(out_1,out_2)]
 
@@ -102,7 +119,7 @@ class MnistHalvesDataset(Dataset):
 	encoder_c = MnistHalvesEncoder
 	decoder_c = MnistHalvesDecoder
 
-	def __init__(self, data_fn, device, missingness=0.5, digits=(2,)):
+	def __init__(self, data_fn, device, missingness=0.5, digits=(0,1,2,3,4,5,6,7,8,9)):
 		"""
 		MNIST data with the top and bottom halves treated as two modalities.
 
@@ -256,7 +273,7 @@ class MnistMcarDataset(Dataset):
 	encoder_c = MnistMcarEncoder
 	decoder_c = MnistMcarDecoder
 
-	def __init__(self, data_fn, device, missingness=0.2, digits=(2,4,6)):
+	def __init__(self, data_fn, device, missingness=0.5, digits=(0,1,2,3,4,5,6,7,8,9)):
 		"""
 		MNIST data with pixels missing completely at random.
 

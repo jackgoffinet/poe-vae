@@ -106,6 +106,8 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
 					help='random seed (default: 1)')
 parser.add_argument('--data-fn', type=str, default='',
 					help='data filename')
+parser.add_argument('--clip', type=float, default=1e3,
+					help='Max gradient norm (default: 1e3)')
 
 
 # Parse and print args.
@@ -186,7 +188,11 @@ def train_epoch(objective, loader, optimizer, epoch, agg):
 	for i, batch in enumerate(loader):
 		optimizer.zero_grad()
 		loss = objective(batch)
+		if torch.isnan(loss):
+			print("NaN Loss!")
+			quit()
 		loss.backward()
+		torch.nn.utils.clip_grad_norm_(objective.parameters(), args.clip)
 		optimizer.step()
 		b_loss += loss.item() * get_batch_len(batch)
 	agg['train_loss'].append(b_loss / len(loader.dataset))
@@ -205,10 +211,8 @@ def test_epoch(objective, loader, epoch, agg):
 	objective.eval()
 	b_loss = 0
 	for i, batch in enumerate(loader):
-		optimizer.zero_grad()
-		loss = objective(batch)
-		loss.backward()
-		optimizer.step()
+		with torch.no_grad():
+			loss = objective(batch)
 		b_loss += loss.item() * get_batch_len(batch)
 	agg['test_loss'].append(b_loss / len(loader.dataset))
 	agg['test_epoch'].append(epoch)

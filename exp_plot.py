@@ -26,7 +26,7 @@ EXP_1 = { \
 }
 
 EXP_2 = { \
-	'title': 'MNIST MCAR',
+	'title': 'MNIST MCAR', # Short run
 	'dirs': ['27367119', '27563728', '27956946', '28153555', '08052048', '77052245'],
 	'names': ['1vMF PoE', '2vMF PoE', '3vMF PoE', '4vMF PoE', 'Gaussian PoE', 'IWAE Gaussian PoE'],
 	'colors': ['firebrick', 'orchid', 'mediumseagreen', 'hotpink', 'goldenrod', 'peru'],
@@ -34,17 +34,34 @@ EXP_2 = { \
 }
 
 EXP_3 = { \
-	'title': 'MNIST MCAR',
+	'title': 'MNIST MCAR', # Long run
 	'dirs': ['91139835', '91336444', '91729662', '91926271', '77591932', '54994305', '16284639'],
 	'names': ['1vMF PoE', '2vMF PoE', '3vMF PoE', '4vMF PoE', 'Gaussian PoE', 'IWAE Gaussian PoE', 'EBM PoE'],
 	'colors': ['firebrick', 'orchid', 'mediumseagreen', 'hotpink', 'goldenrod', 'peru', 'orange'],
 	'min_val': -500,
 }
 
+EXP_4 = { \
+	'title': 'MNIST Halves',
+	'dirs': ['99088720', '99678547', '93282000', '66259403', '45031893', '02655425'],
+	'names': ['3vMF PoE', '5vMF PoE', 'Gaussian PoE', 'MMVAE MoE', 'IWAE Gaussian PoE', 'EBM PoE'],
+	'colors': ['firebrick', 'orchid', 'mediumseagreen', 'hotpink', 'goldenrod', 'orange'],
+	'min_val': 100.0,
+}
+
+
+EXP_5 = { \
+	'title': 'MNIST MCAR', # Long run
+	'dirs': ['13488496', '14078323', '78321648', '56671221', '72907745'],
+	'names': ['3vMF PoE', '5vMF PoE', 'Gaussian PoE', 'IWAE Gaussian PoE', 'EBM PoE'],
+	'colors': ['firebrick', 'orchid', 'mediumseagreen', 'goldenrod', 'orange'],
+	'min_val': -500,
+}
+
 
 
 if __name__ == '__main__':
-	EXP = EXP_1
+	EXP = EXP_5
 	fig, ax = plt.subplots(figsize=(5,3))
 	min_value = EXP['min_val']
 

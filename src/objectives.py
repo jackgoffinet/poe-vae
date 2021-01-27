@@ -64,9 +64,16 @@ class VaeObjective(torch.nn.Module):
 		"""
 		# Encode data.
 		var_dist_params = self.encoder(x) # [n_params][b,m,param_dim]
+		for i in range(len(var_dist_params)):
+			for j in range(len(var_dist_params[i])):
+				if torch.isnan(var_dist_params[i][j]).sum() > 0:
+					print("var_dist_params[{},{}] forward NaN!".format(i,j))
 		# Combine evidence.
 		var_post_params = self.variational_strategy(*var_dist_params, \
 				nan_mask=nan_mask)
+		for i in range(len(var_post_params)):
+			if torch.isnan(var_post_params[i]).sum() > 0:
+				print("var_post_params[{}] forward NaN!".format(i))
 		# Make a variational posterior and sample.
 		if hasattr(self.variational_posterior, 'non_stratified_forward'):
 			z_samples, log_qz = \
@@ -204,18 +211,32 @@ class IwaeElbo(VaeObjective):
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		x, nan_mask = apply_nan_mask(x)
+		if torch.isnan(x[0]).sum() > 0:
+			print("obj[0] forward NaN!")
+		if torch.isnan(x[1]).sum() > 0:
+			print("obj[1] forward NaN!")
 		# Encode.
 		# [b,s,z], [b,s], [b,s]
 		z_samples, log_qz, log_pz = self.encode(x, nan_mask, n_samples=self.k)
+		if torch.isnan(z_samples).sum() > 0:
+			print(" f z_samples NaN!")
+		if torch.isnan(log_qz).sum() > 0:
+			print("f log_qz NaN!")
+		if torch.isnan(log_pz).sum() > 0:
+			print("f log_pz NaN!")
 		assert log_pz.shape[1] == self.k # assert k samples
 		assert log_qz.shape[1] == self.k # assert k samples
 		# Decode.
 		log_likes = self.decode(z_samples, x, nan_mask) # [b,s]
+		if torch.isnan(log_likes).sum() > 0:
+			print(" f log_likes NaN!")
 		assert log_likes.shape[1] == self.k # assert k samples
 		# Define importance weights.
 		log_ws = log_pz + log_likes - log_qz - np.log(self.k) # [b,k]
 		# Evaluate loss.
 		loss = -torch.mean(torch.logsumexp(log_ws, dim=1))
+		if torch.isnan(loss).sum() > 0:
+			print("Loss NaN!")
 		return loss
 
 
@@ -342,6 +363,8 @@ class MmvaeLessQuadraticElbo(VaeObjective):
 	def forward(self, x):
 		"""
 		Single sample per modality ELBO from Shi et al. (2019), Appendix B.
+
+		TO DO: Implement!
 
 		Parameters
 		----------
