@@ -74,9 +74,9 @@ def make_datasets(args):
 		Maps the keys 'train' and 'test' to respective Datasets.
 	"""
 	train_dataset = args.dataset(args.train_data_fn, args.device, \
-			missingness=args.train_m, mode='train')
+			missingness=args.train_m, mode='train', seed=args.seed)
 	test_dataset = args.dataset(args.test_data_fn, args.device, \
-			missingness=args.test_m, mode='test')
+			missingness=args.test_m, mode='test', seed=args.seed)
 	return {'train': train_dataset, 'test': test_dataset}
 
 

@@ -38,3 +38,8 @@ import torch
 15. Double check DReG gradients
 16. STL gradients
 17. AR-ELBO
+18. Well-defined proposals for EBM MLL
+19. Implement EBM IWAE variants
+20. Student experts
+21. Compare network architectures w/ other papers
+22. Simplify encoder/decoders

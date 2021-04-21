@@ -17,19 +17,28 @@ LOGGING_DIR = 'logs'
 AGG_FN = 'agg.pt'
 
 
+
 EXP_1 = { \
-	'title': 'MNIST Halves',
-	'dirs': ['13104539', '74249631', '12929771', '74337007', '53204748', '81921340'],
-	'names': ['20vMF', None, 'Gaussian', None, 'EBM', None],
-	'colors': ['firebrick', 'firebrick', 'darkorchid', 'darkorchid', 'mediumseagreen', 'mediumseagreen'],
-	'min_val': 200.0,
+	'title': 'MNIST Halves 90% Missing',
+	'dirs': ['46583323', '58292551', '58554696', '69011097', '05033611', '85227924'],
+	'names': ['5vMF IWAE', '10vMF IWAE', '20vMF IWAE', 'Gaussian IWAE', 'EBM', 'Gaussian'],
+	'colors': ['gray', 'b', 'firebrick', 'darkorchid', 'mediumseagreen', 'goldenrod'],
+	'min_val': 350.0,
+}
+
+EXP_2 = { \
+	'title': 'MNIST MCAR 90% Missing',
+	'dirs': ['51048121', '34649524', '52082347'],
+	'names': ['Gaussian IWAE', 'Gaussian', 'EBM'],
+	'colors': ['darkorchid', 'goldenrod', 'mediumseagreen'],
+	'min_val': -1000,
 }
 
 
 
 
 if __name__ == '__main__':
-	EXP = EXP_1
+	EXP = EXP_2
 	fig, ax = plt.subplots(figsize=(5,3))
 	min_value = EXP['min_val']
 

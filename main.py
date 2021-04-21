@@ -120,7 +120,7 @@ parser.add_argument('--test-m', type=float, default=0.0,
 
 # Parse and print args.
 args = parser.parse_args()
-args_json_str = json.dumps(args.__dict__, sort_keys=True, indent=4)
+args_json_str = json.dumps(args.__dict__, sort_keys=True, indent=INDENT)
 
 
 # Hash the JSON string to make a logging directory.
@@ -325,6 +325,11 @@ def mll_helper(bjective, dataloaders, epoch, agg, train_mll=False):
 def save_aggregator(agg):
 	"""Save the data aggregrator."""
 	torch.save(agg, agg_fn)
+
+
+def main():
+	# Try Python fire here!
+	pass
 
 
 

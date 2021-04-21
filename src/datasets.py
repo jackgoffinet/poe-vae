@@ -5,6 +5,7 @@ Different datasets are defined here.
 __date__ = "January 2021"
 
 
+import contextlib
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
 import numpy as np
@@ -22,8 +23,18 @@ TRAIN_RECONSTRUCT_FN = 'train_reconstructions.pdf'
 TEST_RECONSTRUCT_FN = 'test_reconstructions.pdf'
 MNIST_TRAIN_FN = '/media/jackg/Jacks_Animal_Sounds/datasets/mnist_train.csv'
 MNIST_TEST_FN = '/media/jackg/Jacks_Animal_Sounds/datasets/mnist_test.csv'
-# print("Using temporary MNIST data!")
 
+
+
+@contextlib.contextmanager
+def temp_seed(seed):
+	"""https://stackoverflow.com/questions/49555991/"""
+	state = np.random.get_state()
+	np.random.seed(seed)
+	try:
+		yield
+	finally:
+		np.random.set_state(state)
 
 
 def load_mnist_data(data_fn, mode):
@@ -125,7 +136,7 @@ class MnistHalvesDataset(Dataset):
 	decoder_c = MnistHalvesDecoder
 
 	def __init__(self, data_fn, device, missingness=0.5, \
-		digits=(0,1,2,3,4,5,6,7,8,9), mode='train'):
+		digits=(0,1,2,3,4,5,6,7,8,9), mode='train', seed=0):
 		"""
 		MNIST data with the top and bottom halves treated as two modalities.
 
@@ -139,11 +150,13 @@ class MnistHalvesDataset(Dataset):
 		self.device = device
 		self.missingness = missingness
 		self.digits = digits
+		self.seed = seed
 		images, labels = load_mnist_data(data_fn, mode)
 		idx = [np.argwhere(labels == digit).flatten() for digit in digits]
 		idx = np.concatenate(idx)
 		images = images[idx]
-		images = images[np.random.permutation(images.shape[0])]
+		with temp_seed(self.seed):
+			images = images[np.random.permutation(images.shape[0])]
 		n, d = images.shape[0], images.shape[1]//2
 		self.view_1 = np.zeros((n,d))
 		self.view_2 = np.zeros((n,d))
@@ -280,7 +293,7 @@ class MnistMcarDataset(Dataset):
 	decoder_c = MnistMcarDecoder
 
 	def __init__(self, data_fn, device, missingness=0.5, \
-		digits=(0,1,2,3,4,5,6,7,8,9), mode='train'):
+		digits=(0,1,2,3,4,5,6,7,8,9), mode='train', seed=0):
 		"""
 		MNIST data with pixels missing completely at random.
 
@@ -294,17 +307,19 @@ class MnistMcarDataset(Dataset):
 		self.device = device
 		self.missingness = missingness
 		self.digits = digits
+		self.seed = seed
 		images, labels = load_mnist_data(data_fn, mode)
 		idx = [np.argwhere(labels == digit).flatten() for digit in digits]
 		idx = np.concatenate(idx)
 		images = images[idx]
-		images = images[np.random.permutation(images.shape[0])]
-		n, d = images.shape[0], images.shape[1]
-		if missingness > 0.0:
-			num_missing = int(round(missingness * d))
-			for i in range(n):
-				idx = np.random.permutation(d)[:num_missing]
-				images[i,idx] = np.nan
+		with temp_seed(self.seed):
+			images = images[np.random.permutation(images.shape[0])]
+			n, d = images.shape[0], images.shape[1]
+			if missingness > 0.0:
+				num_missing = int(round(missingness * d))
+				for i in range(n):
+					idx = np.random.permutation(d)[:num_missing]
+					images[i,idx] = np.nan
 		self.images = torch.tensor(images, dtype=torch.float).unsqueeze(-1)
 
 	def __len__(self):
