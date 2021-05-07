@@ -16,7 +16,7 @@ class AbstractLikelihood(torch.nn.Module):
 	def __init__(self):
 		super(AbstractLikelihood, self).__init__()
 
-	def forward(self, sample, like_params, nan_mask=None):
+	def forward(self, sample, *like_params, nan_mask=None):
 		"""
 		Evaluate log probability of samples.
 
@@ -134,18 +134,18 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 		return like_params[0]
 
 
-	def rsample(self, like_params, n_samples):
-		"""
-		Test this!
-
-		"""
-		raise NotImplementedError
-		assert self.dist is not None
-		loc = torch.zeros(like_params[0].shape[-1], \
-				device=like_params[0].device)
-		scale = self.std_dev * torch.ones_like(loc)
-		self.dist = Normal(loc, scale)
-		return self.dist.rsample(sample_shape=(n_samples,)).transpose(0,1)
+	# def rsample(self, like_params, n_samples):
+	# 	"""
+	# 	Test this!
+	#
+	# 	"""
+	# 	raise NotImplementedError
+	# 	assert self.dist is not None
+	# 	loc = torch.zeros(like_params[0].shape[-1], \
+	# 			device=like_params[0].device)
+	# 	scale = self.std_dev * torch.ones_like(loc)
+	# 	self.dist = Normal(loc, scale)
+	# 	return self.dist.rsample(sample_shape=(n_samples,)).transpose(0,1)
 
 
 

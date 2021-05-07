@@ -7,17 +7,17 @@ This repo contains ...
 
 
 Test vMF PoE:
-python main.py -q vmf_product --latent-dim 20 --vmf-dim 3 -v vmf_poe -p uniform_hypershperical
+`python main.py -q vmf_product --latent-dim 20 --vmf-dim 3 -v vmf_poe -p uniform_hypershperical`
 
 Test EBM PoE:
-python main.py -q ebm -v ebm -o iwae --K 1
+`python main.py -q ebm -v ebm -o iwae --K 1`
 
 
+### Usage
 
-See also:
-
-* [MVAE repo](https://github.com/mhw32/multimodal-vae-public)
-* [MMVAE repo](https://github.com/iffsid/mmvae)
+```bash
+$ python main.py -h
+```
 
 
 ### Modular Multimodal VAE Abstraction
@@ -28,9 +28,21 @@ import torch
 # ...
 ```
 
+### Applying this to your own data
+...
+
+#### Dependencies
+* [Python3](https://www.python.org/) (3.5+)
+* [PyTorch](https://pytorch.org)
+* [Python Fire](https://github.com/google/python-fire)
 
 
-### TO DO
+#### See also:
+* [MVAE repo](https://github.com/mhw32/multimodal-vae-public)
+* [MMVAE repo](https://github.com/iffsid/mmvae)
+* Hyperspherical VAE Repo
+
+#### TO DO
 
 2. Figure out how to enforce component compatibility.
 12. Validation set for early stopping

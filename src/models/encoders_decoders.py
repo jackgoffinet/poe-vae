@@ -102,7 +102,7 @@ class SplitLinearLayer(torch.nn.Module):
 		----------
 		x : torch.Tensor
 		"""
-		return [layer(x) for layer in self.layers]
+		return tuple(layer(x) for layer in self.layers)
 
 
 

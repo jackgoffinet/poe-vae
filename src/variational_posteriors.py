@@ -237,33 +237,27 @@ class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
 
 class VmfProductPosterior(AbstractVariationalPosterior):
 
-	def __init__(self, args):
+	def __init__(self, n_vmfs=5, vmf_dim=4, **kwargs):
 		"""Product of von Mises Fishers varitional posterior."""
 		super(VmfProductPosterior, self).__init__()
-		self.vmf_dim = args.vmf_dim # vMFs are defined on the (vmf_dim-1)-sphere
-		self.latent_dim = args.latent_dim
-		assert self.latent_dim % (self.vmf_dim - 1) == 0, \
-				"Incompatible z_dim and vmf_dim!"
-		self.n_vmfs = self.latent_dim // (self.vmf_dim - 1)
-		self.input_dim = self.n_vmfs * self.vmf_dim
+		self.n_vmfs = n_vmfs
+		self.vmf_dim = vmf_dim
 
-		def parameter_dim_func(z):
-			assert z == self.latent_dim, "Incompatible shapes!"
-			return (self.input_dim, self.n_vmfs)
-
-		self.parameter_dim_func = parameter_dim_func
+		# def parameter_dim_func(z):
+		# 	assert z == self.latent_dim, "Incompatible shapes!"
+		# 	return (self.input_dim, self.n_vmfs)
+		#
+		# self.parameter_dim_func = parameter_dim_func
 
 
-	def forward(self, loc, scale, n_samples=1, transpose=True):
+	def forward(self, kappa_mu, n_samples=1, transpose=True):
 		"""
 		Produce reparamaterized samples and evaluate their log probability.
 
 		Parameters
 		----------
-		loc : torch.Tensor
-			Shape: [b,n_vmfs,d]
-		scale : torch.Tensor
-			Shape: [b,n_vmfs,1]
+		kappa_mu : torch.Tensor
+			Shape : [b,n_vmfs,vmf_dim+1]
 		n_samples : int
 		transpose : bool
 
@@ -275,35 +269,21 @@ class VmfProductPosterior(AbstractVariationalPosterior):
 			Log probability of samples under the distribution.
 			Shape: [batch,n_samples]
 		"""
-		assert len(loc.shape) == 3, \
-				"len(loc.shape) == {}".format(len(loc).shape)
-		assert loc.shape[:-1] == scale.shape[:-1]
-		assert scale.shape[-1] == 1
-		assert loc.shape[-1] == self.vmf_dim
-		self.dist = VonMisesFisher(loc, scale)
-		samples = self.dist.rsample(shape=n_samples) # [s,b,n_vmfs,vmf_dim]
-		log_prob = self.dist.log_prob(samples).sum(dim=-1) #[s,b,n_vmfs*vmf_dim]
+		assert len(kappa_mu.shape) == 3, f"len({kappa_mu.shape}) != 3"
+		# Calculate loc and scale parameterization from kappa_mu.
+		scale = torch.norm(kappa_mu, dim=2)
+		loc = kappa_mu / (scale + EPS)
+		dist = VonMisesFisher(loc, scale)
+		samples = dist.rsample(shape=n_samples) # [s,b,n_vmfs,vmf_dim+1]
+		print("samples", samples.shape)
+		log_prob = dist.log_prob(samples) # .sum(dim=-1) #[s,b,n_vmfs*vmf_dim]
+		print("log_prob", log_prob.shape)
+		quit()
 		samples = samples.view(samples.shape[:2]+(-1,)) # [s,b,n_]
 		if transpose:
 			# [s,b,*] -> [b,s,*]
 			return samples.transpose(0,1), log_prob.transpose(0,1)
 		return samples, log_prob
-
-
-	def rsample(self):
-		""" """
-		raise NotImplementedError
-
-
-	def log_prob(self, samples, loc, scale, transpose=True):
-		"""
-		...
-
-		Parameters
-		----------
-		samples : torch.Tensor [...]
-		"""
-		raise NotImplementedError
 
 
 

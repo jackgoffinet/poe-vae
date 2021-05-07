@@ -1,7 +1,7 @@
 """
 Define strategies for combining evidence into variational distributions.
 
-These strategies all subclass torch.nn.Module. Their job is to convert
+These strategies all subclass `torch.nn.Module`. Their job is to convert
 parameter values straight out of the encoder into a variational posterior,
 combining evidence across the different modalities in some way.
 
@@ -44,9 +44,13 @@ class AbstractVariationalStrategy(torch.nn.Module):
 class GaussianPoeStrategy(AbstractVariationalStrategy):
 	EPS = 1e-5
 
-	def __init__(self, args):
+	def __init__(self, **kwargs):
 		"""
 		Gaussian product of experts strategy
+
+		Note
+		----
+		* Assumes a standard normal prior!
 
 		Parameters
 		----------
@@ -78,10 +82,8 @@ class GaussianPoeStrategy(AbstractVariationalStrategy):
 		list_flag = type(means) == type([]) # not vectorized
 		if list_flag:
 			means = torch.stack(means, dim=1) # [b,m,z]
-			precisions = torch.stack(log_precisions, dim=1)
-			precisions = torch.exp(precisions) # [b,m,z]
-		else:
-			precisions = log_precisions.exp()
+			log_precisions = torch.stack(log_precisions, dim=1)
+		precisions = torch.exp(log_precisions) # [b,m,z]
 		if nan_mask is not None:
 			if list_flag:
 				temp_mask = torch.stack(nan_mask, dim=1)
@@ -101,9 +103,13 @@ class GaussianPoeStrategy(AbstractVariationalStrategy):
 
 class GaussianMoeStrategy(torch.nn.Module):
 
-	def __init__(self, args):
+	def __init__(self, **kwargs):
 		"""
 		Gaussian mixture of experts strategy
+
+		Note
+		----
+		* Assumes a standard normal prior!
 
 		"""
 		super(GaussianMoeStrategy, self).__init__()
@@ -127,10 +133,8 @@ class GaussianMoeStrategy(torch.nn.Module):
 		list_flag = type(means) == type([]) # not vectorized
 		if list_flag:
 			means = torch.stack(means, dim=1) # [b,m,z]
-			precisions = torch.stack(log_precisions, dim=1)
-			precisions = torch.exp(precisions) # [b,m,z]
-		else:
-			precisions = log_precisions.exp()
+			log_precisions = torch.stack(log_precisions, dim=1)
+		precisions = torch.exp(log_precisions) # [b,m,z]
 		# Where things are NaNs, replace mixture components with the prior.
 		if nan_mask is not None:
 			if list_flag:
@@ -150,7 +154,7 @@ class GaussianMoeStrategy(torch.nn.Module):
 class VmfPoeStrategy(AbstractVariationalStrategy):
 	EPS = 1e-5
 
-	def __init__(self, args):
+	def __init__(self, n_vmfs=5, vmf_dim=4, **kwargs):
 		"""
 		von Mises Fisher product of experts strategy
 
@@ -159,57 +163,57 @@ class VmfPoeStrategy(AbstractVariationalStrategy):
 		...
 		"""
 		super(VmfPoeStrategy, self).__init__()
+		self.n_vmfs = n_vmfs
+		self.vmf_dim = vmf_dim
 
 
-	def forward(self, locs, scales, nan_mask=None):
+	def forward(self, kappa_mus, nan_mask=None):
 		"""
-		scale is the \kappa parameter in the vMF
 
 		Parameters
 		----------
-		locs : list of torch.Tensor
-			Shape: [b,m,d*n_vmf]
-		scales : list of torch.Tensor
-			Shape: [b,m,n_vmf]
+		kappa_mus : torch.Tensor or list of torch.Tensor
+			Shape:
+				[b,m,n_vmfs*(vmf_dim+1)]
+				[m][b,n_vmfs*(vmf_dim+1)]
 		nan_mask : torch.Tensor or list of torch.Tensor
 			Indicates where data is missing.
 
 		Returns
 		-------
-		loc : torch.Tensor
-			Shape: [batch, z_dim]
-		scale : torch.Tensor
-			Shape: [batch, z_dim]
+		kappa_mu : torch.Tensor
+			Shape: ...
 		"""
-		list_flag = type(locs) == type([]) # not vectorized
+		list_flag = type(kappa_mus) == type([]) # not vectorized
 		if list_flag:
-			locs = torch.stack(locs, dim=1) # [b,m,d*n_vmf]
-			scales = torch.stack(scales, dim=1) # [b,m,n_vmf]
-		scales = F.softplus(scales) # [b,m,n_vmf]
-		assert len(locs.shape) == 3 and len(scales.shape) == 3
-		assert locs.shape[-1] % scales.shape[-1] == 0
-		d = locs.shape[-1] // scales.shape[-1]
-		locs = locs.view(scales.shape[:3]+(d,)) # [b,m,n_vmf,d]
-		scales = scales.unsqueeze(-1) # [b,m,n_vmf,1]
+			kappa_mus = torch.stack(kappa_mus, dim=1) # [b,m,d*n_vmf]
+		assert len(kappa_mus.shape) == 3, f"len({kappa_mus.shape}) != 3"
+		assert kappa_mus.shape[2] == self.n_vmfs * (self.vmf_dim+1)
+		new_shape = kappa_mus.shape[:2]+(self.n_vmfs, self.vmf_dim+1)
+		kappa_mus = kappa_mus.view(new_shape) # [b,m,n_vmfs,vmf_dim+1]
 		if nan_mask is not None:
 			if list_flag:
 				temp_mask = torch.stack(nan_mask, dim=1) # [b,m]
 			else:
 				temp_mask = nan_mask # [b,m]
 			temp_mask = (~temp_mask).float().unsqueeze(-1).unsqueeze(-1)
-			scales = scales * temp_mask.expand(-1,-1,scales.shape[2],-1)
+			temp_mask = temp_mask.expand(
+					-1,
+					-1,
+					kappa_mus.shape[2],
+					kappa_mus.shape[3],
+			) # [b,m,n_vmfs,vmf_dim+1]
+			kappa_mus = kappa_mus * temp_mask
 		# Combine all the experts.
-		kappa_mus = torch.sum(locs * scales,dim=1) # [b,n_vmf,d]
-		kappa = kappa_mus.norm(dim=-1, keepdim=True) # [b,n_vmf,1]
-		mus = kappa_mus / (kappa + self.EPS) # [b,n_vmf,d]
-		return mus, kappa
+		kappa_mu = torch.sum(kappa_mus, dim=1) # [b,n_vmfs,vmf_dim+1]
+		return kappa_mu
 
 
 
 class EbmStrategy(AbstractVariationalStrategy):
 	EPS = 1e-5
 
-	def __init__(self, args):
+	def __init__(self, **kwargs):
 		"""
 		EBM strategy: just pass the energy function parameters to the EBM.
 
@@ -250,7 +254,7 @@ class EbmStrategy(AbstractVariationalStrategy):
 class LocScaleEbmStrategy(AbstractVariationalStrategy):
 	EPS = 1e-5
 
-	def __init__(self, args):
+	def __init__(self, **kwargs):
 		"""
 		Location/Scale EBM strategy: multiply the Gaussian proposals
 

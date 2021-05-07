@@ -7,10 +7,9 @@ a batch of data, determine how to route the data through these parts to
 calculate a loss.
 
 Representing objectives as torch.nn.Modules instead of functions leaves the door
-open for objectives to have trainable parameters and other state. For the
-objectives so far, though, we don't need this.
+open for objectives to have trainable parameters and other state.
 """
-__date__ = "January 2021"
+__date__ = "January - May 2021"
 
 
 import numpy as np
@@ -32,6 +31,7 @@ class VaeObjective(torch.nn.Module):
 		self.likelihood = vae.likelihood
 		n_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
 		print("Trainabale parameters:", n_params)
+
 
 	def forward(self, x):
 		"""
@@ -63,9 +63,9 @@ class VaeObjective(torch.nn.Module):
 		...
 		"""
 		# Encode data.
-		var_dist_params = self.encoder(x) # [n_params][b,m,param_dim]
+		encoding = self.encoder(x) # [n_params][b,m,param_dim]
 		# Combine evidence.
-		var_post_params = self.variational_strategy(*var_dist_params, \
+		var_post_params = self.variational_strategy(*encoding, \
 				nan_mask=nan_mask)
 		# Make a variational posterior and sample.
 		if hasattr(self.variational_posterior, 'non_stratified_forward'):
@@ -107,7 +107,7 @@ class VaeObjective(torch.nn.Module):
 		# [n_params][b,m,m_dim] if vectorized, otherwise [n_params][m][b,s,x]
 		likelihood_params = self.decoder(z_samples)
 		# Evaluate likelihoods, sum over modalities.
-		log_likes = self.likelihood(x, likelihood_params, \
+		log_likes = self.likelihood(x, *likelihood_params, \
 				nan_mask=nan_mask) # [m][b,s] or [b,s,m]
 		# Sum over modality dimension.
 		if type(log_likes) == type([]): # not vectorized
@@ -152,7 +152,7 @@ class VaeObjective(torch.nn.Module):
 
 class StandardElbo(VaeObjective):
 
-	def __init__(self, vae, args):
+	def __init__(self, vae, **kwargs):
 		super(StandardElbo, self).__init__(vae)
 
 	def forward(self, x):
@@ -198,9 +198,9 @@ class StandardElbo(VaeObjective):
 
 class IwaeElbo(VaeObjective):
 
-	def __init__(self, vae, args):
+	def __init__(self, vae, K=10, **kwargs):
 		super(IwaeElbo, self).__init__(vae)
-		self.k = args.K
+		self.k = K
 
 	def forward(self, x):
 		"""
@@ -230,9 +230,9 @@ class IwaeElbo(VaeObjective):
 
 class DregIwaeElbo(VaeObjective):
 
-	def __init__(self, vae, args):
+	def __init__(self, vae, K=10, **kwargs):
 		super(DregIwaeElbo, self).__init__(vae)
-		self.k = args.K
+		self.k = K
 
 	def forward(self, x):
 		"""
@@ -282,7 +282,7 @@ class DregIwaeElbo(VaeObjective):
 
 class MmvaeQuadraticElbo(VaeObjective):
 
-	def __init__(self, vae, args):
+	def __init__(self, vae, K=10, **kwargs):
 		super(MmvaeQuadraticElbo, self).__init__(vae)
 		self.k = args.K
 		self.M = args.dataset.n_modalities
@@ -342,7 +342,7 @@ class MmvaeQuadraticElbo(VaeObjective):
 
 class MmvaeLessQuadraticElbo(VaeObjective):
 
-	def __init__(self, vae, args):
+	def __init__(self, vae, K=10, **kwargs):
 		raise NotImplementedError
 		super(MmvaeLessQuadraticElbo, self).__init__(vae)
 		self.k = args.K
@@ -403,7 +403,7 @@ class MmvaeLessQuadraticElbo(VaeObjective):
 
 class MvaeElbo(VaeObjective):
 
-	def __init__(self, vae, args):
+	def __init__(self, vae, **kwargs):
 		super(MvaeElbo, self).__init__(vae)
 
 	def forward(self, x):
@@ -420,9 +420,9 @@ class MvaeElbo(VaeObjective):
 
 class SnisElbo(VaeObjective):
 
-	def __init__(self, vae, args):
+	def __init__(self, vae, K=10, **kwargs):
 		super(SnisElbo, self).__init__(vae)
-		self.k = args.K
+		self.k = K
 
 	def forward(self, x):
 		"""
@@ -457,7 +457,7 @@ class SnisElbo(VaeObjective):
 
 class ArElbo(VaeObjective):
 
-	def __init__(self, vae, args):
+	def __init__(self, vae, **kwargs):
 		super(ArElbo, self).__init__(vae)
 
 	def forward(self, x):

@@ -2,51 +2,59 @@
 Import different VAE components, map component names to classes.
 
 """
-__date__ = "January 2021"
+__date__ = "January - May 2021"
 
 
 # Datasets
-from .datasets import MnistHalvesDataset, MnistMcarDataset
+# from .datasets import MnistHalvesDataset, MnistMcarDataset
+# 	'mnist_mcar': MnistMcarDataset,
+
+from .datasets import MnistHalvesDataset
 DATASET_MAP = {
 	'mnist_halves': MnistHalvesDataset,
-	'mnist_mcar': MnistMcarDataset,
 }
 DATASET_KEYS = sorted(list(DATASET_MAP.keys()))
 
 
-# Encoders/Decoders
-from .encoders_decoders import MLP
-ENCODER_DECODER_MAP = {
-	'mlp': MLP,
+from .models import mnist_halves_get_vae
+MODEL_MAP = {
+	'mnist_halves': mnist_halves_get_vae,
 }
-ENCODER_DECODER_KEYS = sorted(list(ENCODER_DECODER_MAP.keys()))
+
+
+# # Encoders/Decoders
+# from .encoders_decoders import MLP
+# ENCODER_DECODER_MAP = {
+# 	'mlp': MLP,
+# }
+# ENCODER_DECODER_KEYS = sorted(list(ENCODER_DECODER_MAP.keys()))
 
 
 # Variational strategies
 from .variational_strategies import GaussianPoeStrategy, GaussianMoeStrategy, \
 		VmfPoeStrategy, EbmStrategy, LocScaleEbmStrategy
-VARIATIONAL_STRATEGY_MAP = {
+VAR_STRATEGY_MAP = {
 	'gaussian_poe': GaussianPoeStrategy,
 	'gaussian_moe': GaussianMoeStrategy,
 	'vmf_poe': VmfPoeStrategy,
 	'ebm': EbmStrategy,
 	'loc_scale_ebm': LocScaleEbmStrategy,
 }
-VARIATIONAL_STRATEGY_KEYS = sorted(list(VARIATIONAL_STRATEGY_MAP.keys()))
+VAR_STRATEGY_KEYS = sorted(list(VAR_STRATEGY_MAP.keys()))
 
 
 # Variational posteriors
 from .variational_posteriors import DiagonalGaussianPosterior, \
 		DiagonalGaussianMixturePosterior, VmfProductPosterior, \
 		EbmPosterior, LocScaleEbmPosterior
-VARIATIONAL_POSTERIOR_MAP = {
+VAR_POSTERIOR_MAP = {
 	'diag_gaussian': DiagonalGaussianPosterior,
 	'diag_gaussian_mixture': DiagonalGaussianMixturePosterior,
 	'vmf_product': VmfProductPosterior,
 	'ebm': EbmPosterior,
 	'loc_scale_ebm': LocScaleEbmPosterior,
 }
-VARIATIONAL_POSTERIOR_KEYS = sorted(list(VARIATIONAL_POSTERIOR_MAP.keys()))
+VAR_POSTERIOR_KEYS = sorted(list(VAR_POSTERIOR_MAP.keys()))
 
 
 # Priors
