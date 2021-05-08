@@ -8,7 +8,7 @@ __date__ = "May 2021"
 import torch
 import torch.nn as nn
 
-from .encoders_decoders import SplitLinearLayer
+from .encoders_decoders import SplitLinearLayer, NetworkList
 
 
 
@@ -22,7 +22,12 @@ def get_vae(**kwargs):
 		Maps keys `'encoder'` and `'decoder'` to `torch.nn.Module`s.
 	"""
 	return {
-		'encoder': encoder_helper(**kwargs),
+		'encoder': NetworkList(
+			nn.ModuleList([
+				encoder_helper(**kwargs),
+				encoder_helper(**kwargs),
+			]),
+		),
 		'decoder': decoder_helper(**kwargs),
 	}
 
@@ -62,30 +67,6 @@ def decoder_helper(variational_strategy='gaussian_poe', latent_dim=20, \
 		nn.Linear(500,500),
 		nn.Linear(500,784),
 	)
-
-
-
-class Encoder(nn.Module):
-
-	def __init__(self):
-		super(Encoder, self).__init__()
-		self.encoder_1 = encoder_helper()
-		self.encoder_2 = encoder_helper()
-
-	def forward(self, x_1, x_2):
-		out_1 = self.encoder_1(x_1)
-		out_2 = self.encoder_2(x_2)
-		return tuple([i,j] for i,j in zip(out_1,out_2))
-
-
-class Decoder(nn.Module):
-
-	def __init__(self):
-		super(Decoder, self).__init__()
-		self.decoder = decoder_helper()
-
-	def forward(self, z):
-		return self.decoder(z)
 
 
 

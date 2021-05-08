@@ -106,11 +106,13 @@ class VaeObjective(torch.nn.Module):
 		# likelihood_params shape:
 		# [n_params][b,m,m_dim] if vectorized, otherwise [n_params][m][b,s,x]
 		likelihood_params = self.decoder(z_samples)
+		if not isinstance(likelihood_params, (tuple, list)):
+			likelihood_params = (likelihood_params,)
 		# Evaluate likelihoods, sum over modalities.
 		log_likes = self.likelihood(x, *likelihood_params, \
 				nan_mask=nan_mask) # [m][b,s] or [b,s,m]
 		# Sum over modality dimension.
-		if type(log_likes) == type([]): # not vectorized
+		if isinstance(log_likes, tuple): # not vectorized
 			log_likes = sum(log_like for log_like in log_likes) # [b,s]
 		else:
 			log_likes = torch.sum(log_likes, dim=2) # [b,s]
@@ -489,24 +491,22 @@ class ArElbo(VaeObjective):
 		return loss
 
 
-
-def get_nan_mask(xs):
-	"""Return a mask indicating which minibatch items are NaNs."""
-	if type(xs) == type([]):
-		return [torch.isnan(x[:,0]) for x in xs]
-	else:
-		return torch.isnan(xs[:,:,0]) # [b,m]
+# def get_nan_mask(xs):
+# 	"""Return a mask indicating which minibatch items are NaNs."""
+# 	if type(xs) == type([]):
+# 		return [torch.isnan(x[:,0]) for x in xs]
+# 	else:
+# 		return torch.isnan(xs[:,:,0]) # [b,m]
 
 
 def apply_nan_mask(xs):
-	""" """
-	if type(xs) == type([]): # non-vectorized modalities
+	if isinstance(xs, (tuple,list)): # non-vectorized modalities
 		nan_mask = [torch.isnan(x[:,0]) for x in xs]
 		for i in range(len(xs)):
-			xs[i][nan_mask[i]] = 0.0
+			xs[i][nan_mask[i]] = 0
 	else: # vectorized modalities
 		nan_mask = torch.isnan(xs[:,:,0]) # [b,m]
-		xs[nan_mask.unsqueeze(-1)] = 0.0
+		xs[nan_mask.unsqueeze(-1)] = 0
 	return xs, nan_mask
 
 

@@ -27,11 +27,10 @@ import torch
 from torch.utils.data import DataLoader
 from zlib import adler32
 
-from .param_maps import DATASET_MAP, ENCODER_DECODER_MAP, \
-		VARIATIONAL_STRATEGY_MAP, VARIATIONAL_POSTERIOR_MAP, PRIOR_MAP, \
-		LIKELIHOOD_MAP, OBJECTIVE_MAP
-from .encoders_decoders import SplitLinearLayer, NetworkList, \
-		EncoderModalityEmbedding, DecoderModalityEmbedding
+from .param_maps import DATASET_MAP, VAR_STRATEGY_MAP, VAR_POSTERIOR_MAP, \
+		PRIOR_MAP, LIKELIHOOD_MAP, OBJECTIVE_MAP, MODEL_MAP
+# from .encoders_decoders import SplitLinearLayer, NetworkList, \
+# 		EncoderModalityEmbedding, DecoderModalityEmbedding
 
 
 DIR_LEN = 8 # for naming the logging directory
@@ -67,7 +66,7 @@ class Logger(object):
 
 
 
-def make_dataloaders(dataset='mnist_halves', train_m=0.5, test_m=0.0, \
+def make_dataloaders(device, dataset='mnist_halves', train_m=0.5, test_m=0.0, \
 	batch_size=256, data_dir='/data', **kwargs):
 	"""
 	Make train and test DataLoaders.
@@ -87,11 +86,13 @@ def make_dataloaders(dataset='mnist_halves', train_m=0.5, test_m=0.0, \
 	"""
 	datasets = {
 		'train': DATASET_MAP[dataset](
+				device,
 				missingness=train_m,
 				data_dir=data_dir,
 				train=True,
 		),
 		'test': DATASET_MAP[dataset](
+				device,
 				missingness=test_m,
 				data_dir=data_dir,
 				train=False,
@@ -148,7 +149,17 @@ def make_objective(dataset='mnist_halves', variational_strategy='gaussian_poe',\
 	return objective
 
 
-def check_args(**kwargs):
+def check_args(
+		variational_strategy='gaussian_poe',
+		variational_posterior='diag_gaussian',
+		prior='standard_gaussian',
+		likelihood='spherical_gaussian',
+		objective='elbo',
+		latent_dim=20,
+		vmf_dim=4,
+		n_vmfs=5,
+		**kwargs,
+):
 	"""
 	Check the arguments.
 

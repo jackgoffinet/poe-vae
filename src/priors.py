@@ -54,7 +54,7 @@ class AbstractPrior(torch.nn.Module):
 class StandardGaussianPrior(AbstractPrior):
 	# n_parameters = 0 # Not needed, right?
 
-	def __init__(self, args):
+	def __init__(self, **kwargs):
 		"""Standard Gaussian prior distribution."""
 		super(StandardGaussianPrior, self).__init__()
 		self.dist = None

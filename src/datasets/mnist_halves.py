@@ -14,46 +14,6 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 
-# from .encoders_decoders import MLP, SplitLinearLayer, EncoderModalityEmbedding,\
-# 		DecoderModalityEmbedding
-
-
-# GENERATE_FN = 'generations.pdf'
-# TRAIN_RECONSTRUCT_FN = 'train_reconstructions.pdf'
-# TEST_RECONSTRUCT_FN = 'test_reconstructions.pdf'
-# MNIST_TRAIN_FN = '/media/jackg/Jacks_Animal_Sounds/datasets/mnist_train.csv'
-# MNIST_TEST_FN = '/media/jackg/Jacks_Animal_Sounds/datasets/mnist_test.csv'
-
-
-#
-# @contextlib.contextmanager
-# def temp_seed(seed):
-# 	"""https://stackoverflow.com/questions/49555991/"""
-# 	state = np.random.get_state()
-# 	np.random.seed(seed)
-# 	try:
-# 		yield
-# 	finally:
-# 		np.random.set_state(state)
-
-
-# def load_mnist_data(data_fn, mode):
-# 	"""
-# 	Load MNIST from a .csv file.
-#
-# 	TO DO: toggle between binarized and real-valued input
-# 	"""
-# 	if data_fn == '':
-# 		if mode == 'train':
-# 			data_fn = MNIST_TRAIN_FN
-# 		elif mode == 'test':
-# 			data_fn = MNIST_TEST_FN
-# 		else:
-# 			raise NotImplementedError
-# 	d = np.loadtxt(data_fn, delimiter=',')
-# 	images, labels = d[:,1:]/255, np.array(d[:,0], dtype='int')
-# 	return images, labels
-
 
 
 class MnistHalvesDataset(Dataset):
@@ -61,7 +21,7 @@ class MnistHalvesDataset(Dataset):
 	modality_dim = 392
 	vectorized_modalities = False
 
-	def __init__(self, missingness=0.5, data_dir='data/', train=True):
+	def __init__(self, device, missingness=0.5, data_dir='data/', train=True):
 		"""
 		MNIST data with the top and bottom halves treated as two modalities.
 
@@ -74,13 +34,15 @@ class MnistHalvesDataset(Dataset):
 		self.missingness = missingness
 		dataset = datasets.MNIST(data_dir, train=train, download=True)
 		data = dataset.data.view(-1,784)
-		self.view_1 = torch.zeros(data.shape[0], 384, dtype=torch.uint8)
-		self.view_2 = torch.zeros(data.shape[0], 384, dtype=torch.uint8)
-		self.view_1[data[:,:384] > 127] = 0
-		self.view_2[data[:,384:] > 127] = 0
+		self.view_1 = torch.zeros(data.shape[0], 392, dtype=torch.uint8)
+		self.view_2 = torch.zeros(data.shape[0], 392, dtype=torch.uint8)
+		self.view_1[data[:,:392] > 127] = 0
+		self.view_2[data[:,392:] > 127] = 0
+		self.view_1 = self.view_1.to(device=device, dtype=torch.float32)
+		self.view_2 = self.view_2.to(device=device, dtype=torch.float32)
 		if missingness > 0.0:
 			num_missing = int(round(missingness * len(self.view_1)))
-			self.view_2[:num_missing] = 255
+			self.view_2[:num_missing] = np.nan
 
 
 	def __len__(self):
@@ -88,7 +50,7 @@ class MnistHalvesDataset(Dataset):
 
 
 	def __getitem__(self, index):
-		return self.view_1[index], self.view_2[index],
+		return self.view_1[index], self.view_2[index]
 
 
 	def make_plots(self, model, datasets, dataloaders, exp_dir):

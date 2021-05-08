@@ -62,7 +62,7 @@ class AbstractVariationalPosterior(torch.nn.Module):
 
 class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 
-	def __init__(self, args):
+	def __init__(self, **kwargs):
 		"""Diagonal Gaussian varitional posterior."""
 		super(DiagonalGaussianPosterior, self).__init__()
 		# latent_dim -> parameter dimensions

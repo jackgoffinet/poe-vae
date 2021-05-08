@@ -9,7 +9,6 @@ Notes
 __date__ = "January - May 2021"
 
 
-import argparse
 import datetime
 from collections import defaultdict
 import fire
@@ -21,9 +20,8 @@ from time import perf_counter
 import torch
 
 from src.misc import LOGGING_DIR, ARGS_FN, LOG_FN, STATE_FN, AGG_FN, INDENT
-from src.param_maps import MODEL_MAP
 from src.utils import Logger, make_dataloaders, check_args, make_objective, \
-		hash_json_str, generate, reconstruct,
+		hash_json_str, generate, reconstruct
 
 
 
@@ -158,7 +156,7 @@ def estimate_marginal_log_like(objective, loader, k=2000, mini_k=128, \
 	return np.mean(batch_res)
 
 
-def mll_helper(bjective, dataloaders, epoch, agg, train_mll=False):
+def mll_helper(objective, dataloaders, epoch, agg, train_mll=False):
 	"""Estimate marginal log likelihoods."""
 	tic = perf_counter()
 	mll = estimate_marginal_log_like(objective, dataloaders['test'])
@@ -268,9 +266,9 @@ def main(
 	cuda = not no_cuda and torch.cuda.is_available()
 	device = torch.device('cuda' if cuda else 'cpu')
 	# Make Dataloaders.
-	dataloaders = make_dataloaders(**args)
+	dataloaders = make_dataloaders(device, **args)
 	# Make the objective.
-	objective = get_objective(**args).to(device)
+	objective = make_objective(**args).to(device)
 	# Make the optimizer.
 	optimizer = torch.optim.Adam(objective.parameters(), lr=lr)
 	# Load pretrained models.

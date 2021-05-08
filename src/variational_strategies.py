@@ -79,13 +79,13 @@ class GaussianPoeStrategy(AbstractVariationalStrategy):
 		precision : torch.Tensor
 			Shape: [batch, z_dim]
 		"""
-		list_flag = type(means) == type([]) # not vectorized
-		if list_flag:
+		tuple_flag = isinstance(means, tuple) # not vectorized
+		if tuple_flag:
 			means = torch.stack(means, dim=1) # [b,m,z]
 			log_precisions = torch.stack(log_precisions, dim=1)
 		precisions = torch.exp(log_precisions) # [b,m,z]
 		if nan_mask is not None:
-			if list_flag:
+			if tuple_flag:
 				temp_mask = torch.stack(nan_mask, dim=1)
 			else:
 				temp_mask = nan_mask
@@ -130,14 +130,14 @@ class GaussianMoeStrategy(torch.nn.Module):
 		Returns
 		-------
 		"""
-		list_flag = type(means) == type([]) # not vectorized
-		if list_flag:
+		tuple_flag = isinstance(means, tuple) # not vectorized
+		if tuple_flag:
 			means = torch.stack(means, dim=1) # [b,m,z]
 			log_precisions = torch.stack(log_precisions, dim=1)
 		precisions = torch.exp(log_precisions) # [b,m,z]
 		# Where things are NaNs, replace mixture components with the prior.
 		if nan_mask is not None:
-			if list_flag:
+			if tuple_flag:
 				temp_mask = torch.stack(nan_mask, dim=1)
 			else:
 				temp_mask = nan_mask
@@ -184,15 +184,15 @@ class VmfPoeStrategy(AbstractVariationalStrategy):
 		kappa_mu : torch.Tensor
 			Shape: ...
 		"""
-		list_flag = type(kappa_mus) == type([]) # not vectorized
-		if list_flag:
+		tuple_flag = isinstance(kappa_mus, tuple) # not vectorized
+		if tuple_flag:
 			kappa_mus = torch.stack(kappa_mus, dim=1) # [b,m,d*n_vmf]
 		assert len(kappa_mus.shape) == 3, f"len({kappa_mus.shape}) != 3"
 		assert kappa_mus.shape[2] == self.n_vmfs * (self.vmf_dim+1)
 		new_shape = kappa_mus.shape[:2]+(self.n_vmfs, self.vmf_dim+1)
 		kappa_mus = kappa_mus.view(new_shape) # [b,m,n_vmfs,vmf_dim+1]
 		if nan_mask is not None:
-			if list_flag:
+			if tuple_flag:
 				temp_mask = torch.stack(nan_mask, dim=1) # [b,m]
 			else:
 				temp_mask = nan_mask # [b,m]
@@ -243,8 +243,8 @@ class EbmStrategy(AbstractVariationalStrategy):
 		nan_mask : torch.Tensor
 			Passed from input.
 		"""
-		list_flag = type(thetas) == type([]) # not vectorized
-		if list_flag:
+		tuple_flag = isinstance(thetas, tuple) # not vectorized
+		if tuple_flag:
 			thetas = torch.stack(thetas, dim=1)
 			nan_mask = torch.stack(nan_mask, dim=1)
 		return thetas, nan_mask
@@ -300,8 +300,8 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 		nan_mask : torch.Tensor
 			Shape : [b,m]
 		"""
-		list_flag = type(means) == type([]) # not vectorized
-		if list_flag:
+		tuple_flag = isinstance(means, tuple) # not vectorized
+		if tuple_flag:
 			thetas = torch.stack(thetas, dim=1)
 			nan_mask = torch.stack(nan_mask, dim=1)
 			means = torch.stack(means, dim=1) # [b,m,z]

@@ -2,7 +2,7 @@
 Define observation likelihoods.
 
 """
-__date__ = "January 2021"
+__date__ = "January - May 2021"
 
 
 import numpy as np
@@ -40,13 +40,13 @@ class AbstractLikelihood(torch.nn.Module):
 
 class SphericalGaussianLikelihood(AbstractLikelihood):
 
-	def __init__(self, args):
+	def __init__(self, obs_std_dev=0.1, **kwargs):
 		"""
 		Spherical Gaussian likelihood distribution.
 
 		"""
 		super(SphericalGaussianLikelihood, self).__init__()
-		self.std_dev = args.obs_std_dev
+		self.std_dev = obs_std_dev
 		self.dist = None
 		self.dim = -1
 		self.parameter_dim_func = lambda d: (d,)
@@ -98,7 +98,14 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 
 
 	def _forward_non_vectorized(self, xs, decoder_xs, nan_mask=None):
-		"""Non-vectorized version of `forward`"""
+		"""
+		Non-vectorized version of `forward`
+
+		NOTE: HERE!
+
+		Parameters
+		----------
+		"""
 		assert len(decoder_xs) == 1
 		# Unwrap the single parameter lists.
 		decoder_xs = [decoder_x for decoder_x in decoder_xs[0]]
@@ -121,6 +128,7 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 
 	def mean(self, like_params, n_samples):
 		"""
+		NOTE: is this used?
 
 		Parameters
 		----------
@@ -129,23 +137,9 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 		like_params (vectorized): list of torch.tensor
 			Shape: ...
 		"""
-		if type(like_params[0]) == type([]): # not vectorized
+		if isinstance(like_params[0], (tuple,list)): # not vectorized
 			return [like_param for like_param in like_params[0]]
 		return like_params[0]
-
-
-	# def rsample(self, like_params, n_samples):
-	# 	"""
-	# 	Test this!
-	#
-	# 	"""
-	# 	raise NotImplementedError
-	# 	assert self.dist is not None
-	# 	loc = torch.zeros(like_params[0].shape[-1], \
-	# 			device=like_params[0].device)
-	# 	scale = self.std_dev * torch.ones_like(loc)
-	# 	self.dist = Normal(loc, scale)
-	# 	return self.dist.rsample(sample_shape=(n_samples,)).transpose(0,1)
 
 
 
