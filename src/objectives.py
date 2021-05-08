@@ -2,9 +2,8 @@
 Different objectives for VAEs.
 
 Objectives play a central role in this VAE abstraction. They take a VAE object,
-which isn't anything more than a collection of various modular parts, and, given
-a batch of data, determine how to route the data through these parts to
-calculate a loss.
+which is just a collection of various modular parts, and, given a batch of data,
+determine how to route the data through these parts to calculate a loss.
 
 Representing objectives as torch.nn.Modules instead of functions leaves the door
 open for objectives to have trainable parameters and other state.
@@ -35,46 +34,59 @@ class VaeObjective(torch.nn.Module):
 
 	def forward(self, x):
 		"""
-		Evaluate loss on a minibatch x.
+		Evaluate loss on a minibatch `x`.
 
 		Parameters
 		----------
 		x : torch.Tensor or list of torch.Tensor
+			Shape: [m][b,x] or ???
 
 		Returns
 		-------
 		loss : torch.Tensor
+			Shape: []
 		"""
 		raise NotImplementedError
 
 
-	def encode(self, x, nan_mask, n_samples=1):
+	def encode(self, xs, nan_mask, n_samples=1):
 		"""
 		Standard encoding procedure.
 
 		Parameters
 		----------
-		x : list of torch.Tensor or torch.Tensor
-			Shape: [modalities][batch,m_dim] or [batch,modalities,m_dim]
+		xs : list of torch.Tensor or torch.Tensor
+			Shape:
+				[batch,modalities,m_dim] if vecotrized
+				[modalities][batch,m_dim] otherwise
 		nan_mask : list of torch.Tensor
+			Shape:
+				??? if vectorized
+				??? otherwise
 
 		Returns
 		-------
-		...
+		z_samples :
+		log_qz :
+		log_pz :
 		"""
 		# Encode data.
-		encoding = self.encoder(x) # [n_params][b,m,param_dim]
+		encoding = self.encoder(xs) # [n_params][b,m,param_dim]
 		# Combine evidence.
 		var_post_params = self.variational_strategy(*encoding, \
 				nan_mask=nan_mask)
 		# Make a variational posterior and sample.
 		if hasattr(self.variational_posterior, 'non_stratified_forward'):
 			z_samples, log_qz = \
-					self.variational_posterior.non_stratified_forward( \
-					*var_post_params, n_samples=n_samples)
+					self.variational_posterior.non_stratified_forward(
+						*var_post_params,
+						n_samples=n_samples,
+					)
 		else:
-			z_samples, log_qz = self.variational_posterior(*var_post_params, \
-					n_samples=n_samples)
+			z_samples, log_qz = self.variational_posterior(
+					*var_post_params,
+					n_samples=n_samples,
+			)
 		# Evaluate prior.
 		log_pz = self.prior(z_samples)
 		# if torch.isnan(z_samples).sum() > 0:
@@ -103,16 +115,21 @@ class VaeObjective(torch.nn.Module):
 			Shape: [batch,samples]
 		"""
 		# Decode samples to get likelihood parameters.
-		# likelihood_params shape:
-		# [n_params][b,m,m_dim] if vectorized, otherwise [n_params][m][b,s,x]
+		# `likelihood_params` shape:
+		# [n_params][b,m,m_dim] if vectorized
+		# [n_params][m][b,s,x] otherwise
 		likelihood_params = self.decoder(z_samples)
-		if not isinstance(likelihood_params, (tuple, list)):
-			likelihood_params = (likelihood_params,)
+		# if not isinstance(likelihood_params, (tuple, list)):
+		# 	likelihood_params = (likelihood_params,)
 		# Evaluate likelihoods, sum over modalities.
-		log_likes = self.likelihood(x, *likelihood_params, \
+		log_likes = self.likelihood(x, likelihood_params, \
 				nan_mask=nan_mask) # [m][b,s] or [b,s,m]
 		# Sum over modality dimension.
 		if isinstance(log_likes, tuple): # not vectorized
+			print("here")
+			for x in log_likes:
+				print(type(x), len(x)) # list
+			quit()
 			log_likes = sum(log_like for log_like in log_likes) # [b,s]
 		else:
 			log_likes = torch.sum(log_likes, dim=2) # [b,s]
@@ -141,13 +158,16 @@ class VaeObjective(torch.nn.Module):
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		x, nan_mask = apply_nan_mask(x)
 		# [b,k,z], [b,k], [b,k]
-		z_samples, log_qz, log_pz = \
-				self.encode(x, nan_mask, n_samples=n_samples)
+		z_samples, log_qz, log_pz = self.encode(
+				x,
+				nan_mask,
+				n_samples=n_samples,
+		)
 		log_likes = self.decode(z_samples, x, nan_mask) # [b,k]
 		if keepdim: # Keep the sample dimension.
 			return log_pz - log_qz + log_likes
-		est_log_m = torch.logsumexp(log_pz - log_qz + log_likes \
-				- np.log(n_samples), dim=1)
+		est_log_m = log_pz - log_qz + log_likes - np.log(n_samples)
+		est_log_m = torch.logsumexp(est_log_m, dim=1)
 		return est_log_m
 
 

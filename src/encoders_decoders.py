@@ -33,7 +33,7 @@ class NetworkList(torch.nn.Module):
 
 		Parameters
 		----------
-		xs : list of torch.Tensor
+		xs : tuple of torch.Tensor
 		"""
 		if isinstance(xs, (tuple,list)):
 			assert len(xs) == len(self.nets)
@@ -103,6 +103,19 @@ class SplitLinearLayer(torch.nn.Module):
 		x : torch.Tensor
 		"""
 		return tuple(layer(x) for layer in self.layers)
+
+
+
+class GatherLayer(torch.nn.Module):
+
+	def __init__(self):
+		"""
+		Take inputs and wrap them in a tuple.
+		"""
+		super(GatherLayer, self).__init__()
+
+	def forward(self, args):
+		return (args,)
 
 
 

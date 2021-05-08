@@ -1,5 +1,5 @@
 """
-Binary MNIST halves networks.
+Binarized MNIST halves networks.
 
 """
 __date__ = "May 2021"
@@ -8,7 +8,10 @@ __date__ = "May 2021"
 import torch
 import torch.nn as nn
 
-from .encoders_decoders import SplitLinearLayer, NetworkList
+from .encoders_decoders import SplitLinearLayer, NetworkList, \
+		GatherLayer
+from .likelihoods import GroupedLikelihood
+from .param_maps import LIKELIHOOD_MAP
 
 
 
@@ -24,16 +27,18 @@ def get_vae(**kwargs):
 	return {
 		'encoder': NetworkList(
 			nn.ModuleList([
-				encoder_helper(**kwargs),
-				encoder_helper(**kwargs),
+				make_single_encoder(**kwargs),
+				make_single_encoder(**kwargs),
 			]),
 		),
-		'decoder': decoder_helper(**kwargs),
+		'decoder': make_decoder(**kwargs),
+		'likelihood': likelihood_helper(**kwargs),
 	}
 
 
-def encoder_helper(variational_strategy='gaussian_poe', latent_dim=20,
+def make_single_encoder(variational_strategy='gaussian_poe', latent_dim=20,
 	vmf_dim=4, n_vmfs=5, **kwargs):
+	""" """
 	if variational_strategy == 'gaussian_poe':
 		z_dim = latent_dim
 	elif variational_strategy == 'vmf_poe':
@@ -53,8 +58,9 @@ def encoder_helper(variational_strategy='gaussian_poe', latent_dim=20,
 	)
 
 
-def decoder_helper(variational_strategy='gaussian_poe', latent_dim=20, \
+def make_decoder(variational_strategy='gaussian_poe', latent_dim=20, \
 	vmf_dim=4, n_vmfs=5, **kwargs):
+	""" """
 	if variational_strategy == 'gaussian_poe':
 		z_dim = latent_dim
 	elif variational_strategy == 'vmf_poe':
@@ -65,8 +71,16 @@ def decoder_helper(variational_strategy='gaussian_poe', latent_dim=20, \
 		nn.Linear(z_dim,200),
 		nn.Linear(200,500),
 		nn.Linear(500,500),
-		nn.Linear(500,784),
+		SplitLinearLayer(500,(784//2,784//2)),
+		GatherLayer(),
 	)
+
+
+def likelihood_helper(likelihood='spherical_gaussian', **kwargs):
+	"""Make a different likelihood for each modality."""
+	return GroupedLikelihood([
+		LIKELIHOOD_MAP[likelihood](**kwargs) for _ in range(2)
+	])
 
 
 

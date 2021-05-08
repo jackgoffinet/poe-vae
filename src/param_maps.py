@@ -5,29 +5,12 @@ Import different VAE components, map component names to classes.
 __date__ = "January - May 2021"
 
 
-# Datasets
-# from .datasets import MnistHalvesDataset, MnistMcarDataset
-# 	'mnist_mcar': MnistMcarDataset,
 
 from .datasets import MnistHalvesDataset
 DATASET_MAP = {
 	'mnist_halves': MnistHalvesDataset,
 }
 DATASET_KEYS = sorted(list(DATASET_MAP.keys()))
-
-
-from .models import mnist_halves_get_vae
-MODEL_MAP = {
-	'mnist_halves': mnist_halves_get_vae,
-}
-
-
-# # Encoders/Decoders
-# from .encoders_decoders import MLP
-# ENCODER_DECODER_MAP = {
-# 	'mlp': MLP,
-# }
-# ENCODER_DECODER_KEYS = sorted(list(ENCODER_DECODER_MAP.keys()))
 
 
 # Variational strategies
@@ -83,6 +66,13 @@ OBJECTIVE_MAP = {
 	'mmvae_quadratic': MmvaeQuadraticElbo,
 }
 OBJECTIVE_KEYS = sorted(list(OBJECTIVE_MAP.keys()))
+
+
+# Models
+from .mnist_halves_model import get_vae as mnist_halves_get_vae
+MODEL_MAP = {
+	'mnist_halves': mnist_halves_get_vae,
+}
 
 
 
