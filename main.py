@@ -1,10 +1,6 @@
 """
 Main script: Train a model.
 
-Notes
------
-* Loading a model and continuing to train breaks the random seeds. Train in one
-  go for reproducability.
 """
 __date__ = "January - May 2021"
 
@@ -35,11 +31,11 @@ def train_epoch(objective, loader, optimizer, epoch, agg):
 
 	Parameters
 	----------
-	objective :
-	loader :
-	optimizer :
-	epoch :
-	agg :
+	objective : src.objectives.VaeObjective
+	loader : torch.utils.DataLoader
+	optimizer : torch.optim.Optimizer
+	epoch : int
+	agg : defaultdict
 	"""
 	objective.train()
 	b_loss = 0
@@ -64,10 +60,10 @@ def test_epoch(objective, loader, epoch, agg):
 
 	Parameters
 	----------
-	objective :
-	loader :
-	epoch :
-	agg :
+	objective : src.objectives.VaeObjective
+	loader : torch.utils.DataLoader
+	epoch : int
+	agg : defaultdict
 	"""
 	objective.eval()
 	b_loss = 0
@@ -101,7 +97,7 @@ def load_state(objective, optimizer, device):
 
 def get_batch_len(batch):
 	"""Return the number of data items in a batch."""
-	if type(batch) == type([]): # non-vectorized modalities
+	if isinstance(batch, (tuple,list)): # non-vectorized modalities
 		return len(batch[0])
 	return len(batch) # vectorized modalities
 
@@ -114,12 +110,10 @@ def estimate_marginal_log_like(objective, loader, k=2000, mini_k=128, \
 	Take the approximate posterior as a proposal distribution, do an
 	importance-weighted estimate.
 
-	TO DO: try/except blocks with decreasing mini_k
-
 	Parameters
 	----------
-	objective :
-	loader :
+	objective : src.objectives.VaeObjective
+	loader : torch.utils.DataLoader
 	k : int
 	mini_k : int
 	reduction : {'mean', 'sum'}
@@ -127,6 +121,7 @@ def estimate_marginal_log_like(objective, loader, k=2000, mini_k=128, \
 	Returns
 	-------
 	est_mll : float
+		Estimated data marginal log likelihood.
 	"""
 	assert reduction in ['sum', 'mean']
 	batch_res = []
@@ -143,7 +138,7 @@ def estimate_marginal_log_like(objective, loader, k=2000, mini_k=128, \
 					inner_batch_res.append(log_l)
 				except RuntimeError: # CUDA out of memory
 					if mini_k == 1:
-						print("MLL failed!")
+						print("MLL failed, probably due to memory issues!")
 						quit()
 					mini_k //= 2
 			log_m = torch.cat(inner_batch_res, dim=1) - np.log(k)
@@ -210,12 +205,78 @@ def main(
 	"""
 	Main function: train a model.
 
+	Note that not all parameter settings are compatible. For example, we can't
+	set `variational_strategy=gaussian_moe` and
+	`variational_posterior=vmf_product`. Inconsistencies like this should be
+	caught by `src.utils.check_args`.
+
 	Parameters
 	----------
 	dataset : str, optional
-	encoder : str, optional
+		The dataset to train on. See `src.param_maps.DATASET_MAP` for all
+		options.
 	variational_strategy : str, optional
-	...
+		A strategy for combining modality-specific recognition models. See
+		`src.param_maps.VAR_STRATEGY_MAP` for all options.
+	variational_posterior : str, optional
+		The family of approximate posteriors to use. See
+		`src.param_maps.VAR_POSTERIOR_MAP` for all options.
+	prior : str, optional
+		The prior distribution to use. See `src.param_maps.PRIOR_MAP` for all
+		options.
+	likelihood : str, optional
+		The likelihood distribution to use. See `src.param_maps.LIKELIHOOD_MAP`
+		for all options.
+	objective : str, optional
+		The objective to use. See `src.param_maps.OBJECTIVE_MAP` for all
+		options.
+	lr : float, optional
+		Learning rate.
+	K : int, optional
+		Number of samples for the IWAE objective. NOTE: change the name of this!
+	ebm_samples : int, optional
+		Number of samples for the self-normalized importance sampling (SNIS)
+		strategy for the energy-based model (EBM) variational posterior.
+	batch_size : int, optional
+		Size of training batches.
+	epochs : int, optional
+		Maximum number of epochs to train.
+	latent_dim : int, optional
+		Latent dimension.
+	m_dim : int, optional
+		NOTE: is this used???
+	vmf_dim : int, optional
+		The sphere dimension to use for von Mises-Fisher (vMF) distributions:
+		S^{vmf_dim}. Internally, samples from the vMF are represented in the
+		ambient space \mathbb{R}^{vmf_dim+1}.
+	n_vmfs : int, optional
+		Number of von Mises-Fisher distributions to use to form the latent
+		space.
+	theta_dim : int, optional
+		...
+	obs_std_dev : float, optional
+		Observation standard deviation. For Gaussian likelihoods.
+	pre_trained : bool, optional
+		Set to `True` if you want to keep training a previously saved model.
+		Loading a model and continuing to train breaks the random seeds. Train
+		in one go for reproducability.
+	mll_freq : int, optional
+		The test set marginal log likelihood is estimated every `mll_freq`
+		epochs.
+	test_freq : int, optional
+		The test set objective is evaluated every `test_freq` epochs.
+	no_cuda : bool, optional
+		Set to `True` if you don't want to use CUDA, even if it is available.
+	seed : int, optional
+		Random seed.
+	grad_clip : float, optional
+		The gradient norm at which gradient clipping kicks in.
+	train_m : float, optional
+		Training set missingness.
+	test_m : float, optional
+		Test set missingness.
+	data_dir : str, optional
+		Data directory.
 	"""
 	# Check the arguments.
 	args = locals()

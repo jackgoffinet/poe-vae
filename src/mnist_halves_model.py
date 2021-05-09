@@ -58,14 +58,12 @@ def make_single_encoder(variational_strategy='gaussian_poe', latent_dim=20,
 	if variational_strategy == 'gaussian_poe':
 		z_dim = latent_dim
 		return nn.Sequential(
-			nn.Sequential(
-				nn.Linear(784//2,500),
-				nn.ReLU(),
-				nn.Linear(500,500),
-				nn.ReLU(),
-				nn.Linear(500,200),
-				nn.ReLU(),
-			),
+			nn.Linear(784//2,500),
+			nn.ReLU(),
+			nn.Linear(500,500),
+			nn.ReLU(),
+			nn.Linear(500,200),
+			nn.ReLU(),
 			SplitLinearLayer(200,(z_dim,z_dim)),
 		)
 	elif variational_strategy == 'vmf_poe':
@@ -83,14 +81,12 @@ def make_single_encoder(variational_strategy='gaussian_poe', latent_dim=20,
 	elif variational_strategy == 'loc_scale_ebm':
 		z_dim = latent_dim
 		return nn.Sequential(
-			nn.Sequential(
-				nn.Linear(784//2,500),
-				nn.ReLU(),
-				nn.Linear(500,500),
-				nn.ReLU(),
-				nn.Linear(500,200),
-				nn.ReLU(),
-			),
+			nn.Linear(784//2,500),
+			nn.ReLU(),
+			nn.Linear(500,500),
+			nn.ReLU(),
+			nn.Linear(500,200),
+			nn.ReLU(),
 			SplitLinearLayer(200,(theta_dim,z_dim,z_dim)),
 		)
 	else:
@@ -112,8 +108,11 @@ def make_decoder(variational_strategy='gaussian_poe', latent_dim=20, \
 		raise NotImplementedError(err_str)
 	return nn.Sequential(
 		nn.Linear(z_dim,200),
+		nn.ReLU(),
 		nn.Linear(200,500),
+		nn.ReLU(),
 		nn.Linear(500,500),
+		nn.ReLU(),
 		SplitLinearLayer(500,(784//2,784//2)),
 		GatherLayer(),
 	)

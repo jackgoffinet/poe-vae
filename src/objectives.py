@@ -5,8 +5,8 @@ Objectives play a central role in this VAE abstraction. They take a VAE object,
 which is just a collection of various modular parts, and, given a batch of data,
 determine how to route the data through these parts to calculate a loss.
 
-Representing objectives as torch.nn.Modules instead of functions leaves the door
-open for objectives to have trainable parameters and other state.
+Having objectives subclass torch.nn.Module leaves the door open for objectives
+to have trainable parameters and other state.
 """
 __date__ = "January - May 2021"
 
@@ -66,9 +66,12 @@ class VaeObjective(torch.nn.Module):
 
 		Returns
 		-------
-		z_samples :
-		log_qz :
-		log_pz :
+		z_samples : torch.Tensor
+			Shape: [batch,samples,z_dim]
+		log_qz : torch.Tensor
+			Shape: [batch,samples]
+		log_pz : torch.Tensor
+			Shape: [batch,samples]
 		"""
 		# Encode data.
 		# `encoding` shape:
@@ -80,14 +83,14 @@ class VaeObjective(torch.nn.Module):
 			encoding = tuple(tuple(e) for e in zip(*encoding))
 		# Combine evidence.
 		# `var_post_params` shape: [n_params][b,*] where * is parameter dim.s.
-		# ??? is vecotrized
+		# ??? is vectorized
 		var_post_params = self.variational_strategy(
 				*encoding,
 				nan_mask=nan_mask,
 		)
 		# Make a variational posterior and sample.
-		# z_samples : []
-		# log_qz : []
+		# z_samples : [b,s,z]
+		# log_qz : [b,z]
 		if hasattr(self.variational_posterior, 'non_stratified_forward'):
 			z_samples, log_qz = \
 					self.variational_posterior.non_stratified_forward(
@@ -101,12 +104,6 @@ class VaeObjective(torch.nn.Module):
 			)
 		# Evaluate prior.
 		log_pz = self.prior(z_samples)
-		# if torch.isnan(z_samples).sum() > 0:
-		# 	print("z_samples VaeObjective")
-		# if torch.isnan(log_qz).sum() > 0:
-		# 	print("log_qz VaeObjective")
-		# if torch.isnan(log_pz).sum() > 0:
-		# 	print("log_pz VaeObjective")
 		return z_samples, log_qz, log_pz
 
 
@@ -137,16 +134,12 @@ class VaeObjective(torch.nn.Module):
 		# [n_params][b,m,m_dim] if vectorized
 		# [n_params][m][b,s,x] otherwise
 		likelihood_params = self.decoder(z_samples)
-		# if not isinstance(likelihood_params, (tuple, list)):
-		# 	likelihood_params = (likelihood_params,)
 		# Evaluate likelihoods, sum over modalities.
 		log_likes = self.likelihood(x, likelihood_params, \
 				nan_mask=nan_mask) # [b,s,m]
 		# Sum over modality dimension.
 		log_likes = torch.sum(log_likes, dim=2) # [b,s]
-		# if torch.isnan(log_likes).sum() > 0:
-		# 	print("log_likes VaeObjective")
-		return log_likes # [b,s]
+		return log_likes
 
 
 	def estimate_marginal_log_like(self, x, n_samples=1000, keepdim=False):
