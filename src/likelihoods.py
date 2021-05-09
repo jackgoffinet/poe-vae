@@ -1,11 +1,16 @@
 """
 Define observation likelihoods.
 
+Notes
+-----
+* Explain `like_params`...
+* GroupedLikelihood is the only likelihood that handles non-vectorized
+  modalities.
 """
 __date__ = "January - May 2021"
 
 
-from itertools import repeat
+from itertools import product
 import numpy as np
 import torch
 from torch.distributions import Normal
@@ -17,23 +22,31 @@ class AbstractLikelihood(torch.nn.Module):
 	def __init__(self):
 		super(AbstractLikelihood, self).__init__()
 
-	def forward(self, sample, like_params, nan_mask=None):
+	def forward(self, xs, like_params, nan_mask=None):
 		"""
-		Evaluate log probability of samples.
+		Evaluate the log probability of data under the likelihood.
 
 		Parameters
 		----------
-		sample : torch.Tensor
-			Shape: [...]
-		like_params : tuple of torch.Tensor
-			Likelihood parameters. Shape: [n_params][*param_shape]
-		nan_mask : torch.Tensor or list of torch.Tensor
-			Indicates where data is missing.
+		xs : torch.Tensor or tuple of torch.Tensor
+			Shape:
+			 	[batch,modalities,m_dim] if vectorized
+				[modalities][batch,m_dim] otherwise
+		decoder_xs : tuple of torch.Tensor or tuple of tuples of torch.Tensor
+			Shape:
+				[1][batch,n_samples,m_dim] if vectorized
+				[1][modalities][batch,n_samples,m_dim] otherwise
+		nan_mask : torch.Tensor or tuple of torch.Tensor
+			Shape:
+				[batch,modalities] if vectorized
+				[modalities][b] otherwise
 
 		Returns
 		-------
-		log_prob : torch.Tensor
-			Shape: [...]
+		log_probs : torch.Tensor or tuple of torch.Tensor
+			Shape:
+				[batch,n_samples,modalities] if vectorized
+				[modalities][batch,n_samples] otherwise
 		"""
 		raise NotImplementedError
 
@@ -49,21 +62,38 @@ class GroupedLikelihood(AbstractLikelihood):
 
 		Parameters
 		----------
-		likelihoods : iterable of AbstractLikelihood
+		likelihoods : list of AbstractLikelihood
 		"""
 		super(GroupedLikelihood, self).__init__()
 		self.likelihoods = torch.nn.ModuleList(likelihoods)
 
 	def forward(self, xs, like_params, nan_mask=None):
 		"""
+		Evaluate the log probability of data under the likelihood.
+
+		Parameters
+		----------
+		xs : tuple of torch.Tensor
+			Shape: [modalities][batch,m_dim]
+		like_params : tuple of tuple of torch.Tensor
+			Shape: [n_params][m][b,s,x]
+		nan_mask : None or tuple of torch.Tensor
+			Shape: [modalities][b]
+
 		Returns
 		-------
 		log_probs : tuple of torch.Tensor
+			Shape: [batch,n_samples,modalities]
 		"""
 		if nan_mask is None:
 			nan_mask = [None for _ in self.likelihoods]
+		else:
+			nan_mask = [mask.unsqueeze(1) for mask in nan_mask]
+		# Transpose first two dimensions of like_params.
+		like_params = tuple(tuple(p) for p in zip(*like_params))
+		# Send each modality to its own likelihood.
 		gen = zip(self.likelihoods, xs, like_params, nan_mask)
-		return tuple(like(i,j,k) for like,i,j,k in gen)
+		return torch.cat([like(i,j,k) for like,i,j,k in gen], dim=2)
 
 
 
@@ -83,31 +113,34 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 
 	def forward(self, xs, decoder_xs, nan_mask=None):
 		"""
-		Evaluate log probability of samples.
+		Evaluate the log probability of data under the likelihood.
 
 		Parameters
 		----------
-		xs : list of torch.Tensor or torch.Tensor
-			Shape: [modalities][batch,m_dim] or [batch,modalities,m_dim]
-		decoder_xs (vectorized): tuple of single torch.Tensor
-			Shape: [1][batch,n_samples,m_dim]
-		decoder_xs (not vectorized): tuple of tuples of single torch.Tensor
-			Shape: [1][modalities][batch,n_samples,m_dim]
-		nan_mask (vectorized) : None or torch.Tensor
-			Indicates where data is missing. Shape: [batch,modalities]
-		nan_mask (vectorized) : None or list of torch.Tensor
-			Indicates where data is missing. Shape [modalities][...]
+		xs : torch.Tensor or tuple of torch.Tensor
+			Shape:
+			 	[batch,modalities,m_dim] if vectorized
+				[modalities][batch,m_dim] otherwise
+		decoder_xs : tuple of torch.Tensor or tuple of tuples of torch.Tensor
+			Shape:
+				[1][batch,n_samples,m_dim] if vectorized
+				[1][modalities][batch,n_samples,m_dim] otherwise
+		nan_mask : torch.Tensor or tuple of torch.Tensor
+			Shape:
+				[batch,modalities] if vectorized
+				[modalities][b] otherwise
 
 		Returns
 		-------
-		log_probs (vectorized): torch.Tensor
-			Shape: [batch,n_samples,modalities]
-		log_probs (not vectorized): list of torch.Tensor
-			Shape: [modalities][batch,n_samples]
+		log_probs : torch.Tensor or tuple of torch.Tensor
+			Shape:
+				[batch,n_samples,modalities] if vectorized
+				[modalities][batch,n_samples] otherwise
 		"""
 		# assert len(decoder_xs) == 1, f"SphericalGaussianLikelihood only takes" \
 		# 		+ f" a single parameter. Found {len(decoder_xs)}."
 		if isinstance(xs, (tuple,list)): # not vectorized
+			raise NotImplementedError
 			print("not vectorized", len(xs))
 			return self._forward_non_vectorized(
 					xs,
@@ -119,24 +152,18 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 		if len(decoder_xs.shape) == 3:
 			decoder_xs = decoder_xs.unsqueeze(2) # [b,s,m,m_dim]
 			xs = xs.unsqueeze(1) # [b,m,m_dim]
-		# We also know: xs.shape = [b,m,m_dim]
 		# Reset the distribution if necessary.
 		if xs.shape[-1] != self.dim or self.dist is None:
 			loc = torch.zeros(xs.shape[-1], device=xs.device)
 			scale = self.std_dev * torch.ones_like(loc)
 			self.dist = Normal(loc, scale)
 		log_probs = xs.unsqueeze(1) - decoder_xs # [b,s,m,m_dim]
-		print("log_probs", log_probs.shape)
-		# NOTE: HERE!
-		# Also NaN masks
 		log_probs = self.dist.log_prob(log_probs).sum(dim=3) # [b,s,m]
 		if nan_mask is not None:
 			temp_mask = (~nan_mask).float().unsqueeze(1).expand(log_probs.shape)
 			assert temp_mask.shape == log_probs.shape, \
-					"{}!={}".format(temp_mask.shape, log_probs.shape)
+					f"{temp_mask.shape} != {log_probs.shape}"
 			log_probs = log_probs * temp_mask # [b,s,m]
-		print("log_probs", log_probs.shape)
-		quit()
 		return log_probs
 
 
