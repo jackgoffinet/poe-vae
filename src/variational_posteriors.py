@@ -5,7 +5,7 @@ TO DO
 -----
 * EnergyBasedModelPosterior assumes a standard Gaussian prior. Generalize this!
 """
-__date__ = "January 2021"
+__date__ = "January - May 2021"
 
 
 from math import log
@@ -56,7 +56,8 @@ class AbstractVariationalPosterior(torch.nn.Module):
 		type_tuple = (type(self.dist), type(other.dist))
 		if type_tuple in torch.distributions.kl._KL_REGISTRY:
 			return torch.distributions.kl_divergence(self.dist, other.dist)
-		raise NotImplementedError
+		err_str = f"({type(self.dist)},{type(other.dist)}) not in KL registry!"
+		raise NotImplementedError(err_str)
 
 
 
@@ -65,9 +66,7 @@ class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 	def __init__(self, **kwargs):
 		"""Diagonal Gaussian varitional posterior."""
 		super(DiagonalGaussianPosterior, self).__init__()
-		# latent_dim -> parameter dimensions
-		self.parameter_dim_func = lambda d: (d,d)
-
+		self.dist = None
 
 	def forward(self, mean, precision, n_samples=1, transpose=True):
 		"""
@@ -134,9 +133,6 @@ class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
 		The component weights are assumed to be equal.
 		"""
 		super(DiagonalGaussianMixturePosterior, self).__init__()
-		# latent_dim -> parameter dimensions
-		self.parameter_dim_func = lambda d: (d,d)
-
 
 	def forward(self, means, precisions, n_samples=1):
 		"""
@@ -242,15 +238,9 @@ class VmfProductPosterior(AbstractVariationalPosterior):
 		super(VmfProductPosterior, self).__init__()
 		self.n_vmfs = n_vmfs
 		self.vmf_dim = vmf_dim
+		self.dist = None
 
-		# def parameter_dim_func(z):
-		# 	assert z == self.latent_dim, "Incompatible shapes!"
-		# 	return (self.input_dim, self.n_vmfs)
-		#
-		# self.parameter_dim_func = parameter_dim_func
-
-
-	def forward(self, kappa_mu, n_samples=1, transpose=True):
+	def forward(self, kappa_mu, n_samples=1):
 		"""
 		Produce reparamaterized samples and evaluate their log probability.
 
@@ -259,7 +249,6 @@ class VmfProductPosterior(AbstractVariationalPosterior):
 		kappa_mu : torch.Tensor
 			Shape : [b,n_vmfs,vmf_dim+1]
 		n_samples : int
-		transpose : bool
 
 		Returns
 		-------
@@ -271,19 +260,15 @@ class VmfProductPosterior(AbstractVariationalPosterior):
 		"""
 		assert len(kappa_mu.shape) == 3, f"len({kappa_mu.shape}) != 3"
 		# Calculate loc and scale parameterization from kappa_mu.
-		scale = torch.norm(kappa_mu, dim=2)
+		scale = torch.norm(kappa_mu, dim=2, keepdim=True)
 		loc = kappa_mu / (scale + EPS)
-		dist = VonMisesFisher(loc, scale)
-		samples = dist.rsample(shape=n_samples) # [s,b,n_vmfs,vmf_dim+1]
-		print("samples", samples.shape)
-		log_prob = dist.log_prob(samples) # .sum(dim=-1) #[s,b,n_vmfs*vmf_dim]
-		print("log_prob", log_prob.shape)
-		quit()
-		samples = samples.view(samples.shape[:2]+(-1,)) # [s,b,n_]
-		if transpose:
-			# [s,b,*] -> [b,s,*]
-			return samples.transpose(0,1), log_prob.transpose(0,1)
-		return samples, log_prob
+		self.dist = VonMisesFisher(loc, scale)
+		samples = self.dist.rsample(shape=n_samples) # [s,b,n_vmfs,vmf_dim+1]
+		log_prob = self.dist.log_prob(samples).sum(dim=-1) #[s,b]
+		# samples shape: [s,b,n_vmfs*(vmf_dim+1)]
+		samples = samples.view(samples.shape[:2]+(-1,))
+		# [s,b,*] -> [b,s,*]
+		return samples.transpose(0,1), log_prob.transpose(0,1)
 
 
 

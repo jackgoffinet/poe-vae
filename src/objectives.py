@@ -71,11 +71,23 @@ class VaeObjective(torch.nn.Module):
 		log_pz :
 		"""
 		# Encode data.
-		encoding = self.encoder(xs) # [n_params][b,m,param_dim]
+		# `encoding` shape:
+		# [n_params][b,m,param_dim] if vectorized
+		# [m][n_params][b,param_dim] otherwise
+		encoding = self.encoder(xs)
+		# Transpose first two dimensions: [n_params][m][b,param_dim]
+		if isinstance(xs, (tuple,list)):
+			encoding = tuple(tuple(e) for e in zip(*encoding))
 		# Combine evidence.
-		var_post_params = self.variational_strategy(*encoding, \
-				nan_mask=nan_mask)
+		# `var_post_params` shape: [n_params][b,*] where * is parameter dim.s.
+		# ??? is vecotrized
+		var_post_params = self.variational_strategy(
+				*encoding,
+				nan_mask=nan_mask,
+		)
 		# Make a variational posterior and sample.
+		# z_samples : []
+		# log_qz : []
 		if hasattr(self.variational_posterior, 'non_stratified_forward'):
 			z_samples, log_qz = \
 					self.variational_posterior.non_stratified_forward(

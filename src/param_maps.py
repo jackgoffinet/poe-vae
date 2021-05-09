@@ -1,5 +1,5 @@
 """
-Import different VAE components, map component names to classes.
+Import different VAE components. Map component names to classes.
 
 """
 __date__ = "January - May 2021"
@@ -23,7 +23,6 @@ VAR_STRATEGY_MAP = {
 	'ebm': EbmStrategy,
 	'loc_scale_ebm': LocScaleEbmStrategy,
 }
-VAR_STRATEGY_KEYS = sorted(list(VAR_STRATEGY_MAP.keys()))
 
 
 # Variational posteriors
@@ -37,24 +36,22 @@ VAR_POSTERIOR_MAP = {
 	'ebm': EbmPosterior,
 	'loc_scale_ebm': LocScaleEbmPosterior,
 }
-VAR_POSTERIOR_KEYS = sorted(list(VAR_POSTERIOR_MAP.keys()))
 
 
 # Priors
 from .priors import StandardGaussianPrior, UniformHypersphericalPrior
 PRIOR_MAP = {
 	'standard_gaussian': StandardGaussianPrior,
-	'uniform_hypershperical': UniformHypersphericalPrior,
+	'uniform_hyperspherical': UniformHypersphericalPrior,
 }
-PRIOR_KEYS = sorted(list(PRIOR_MAP.keys()))
 
 
 # Likelihoods
-from .likelihoods import SphericalGaussianLikelihood
+from .likelihoods import SphericalGaussianLikelihood, BernoulliLikelihood
 LIKELIHOOD_MAP = {
 	'spherical_gaussian': SphericalGaussianLikelihood,
+	'bernoulli': BernoulliLikelihood,
 }
-LIKELIHOOD_KEYS = sorted(list(LIKELIHOOD_MAP.keys()))
 
 
 # Objectives
@@ -65,7 +62,6 @@ OBJECTIVE_MAP = {
 	'dreg_iwae': DregIwaeElbo,
 	'mmvae_quadratic': MmvaeQuadraticElbo,
 }
-OBJECTIVE_KEYS = sorted(list(OBJECTIVE_MAP.keys()))
 
 
 # Models

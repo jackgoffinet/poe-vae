@@ -13,7 +13,7 @@ __date__ = "January - May 2021"
 from itertools import product
 import numpy as np
 import torch
-from torch.distributions import Normal
+from torch.distributions import Bernoulli, Normal
 
 
 
@@ -101,64 +101,51 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 
 	def __init__(self, obs_std_dev=0.1, **kwargs):
 		"""
-		Spherical Gaussian likelihood distribution.
+		Spherical Gaussian likelihood.
 
+		Parameters
+		----------
+		obs_std_dev : float, optional
+			Observation standard deviation.
 		"""
 		super(SphericalGaussianLikelihood, self).__init__()
 		self.std_dev = obs_std_dev
-		self.dist = None
-		self.dim = -1
-		self.parameter_dim_func = lambda d: (d,)
 
 
 	def forward(self, xs, decoder_xs, nan_mask=None):
 		"""
 		Evaluate the log probability of data under the likelihood.
 
+		NOTE: check decoder_xs shape for vectorized input!
+
 		Parameters
 		----------
-		xs : torch.Tensor or tuple of torch.Tensor
-			Shape:
-			 	[batch,modalities,m_dim] if vectorized
-				[modalities][batch,m_dim] otherwise
-		decoder_xs : tuple of torch.Tensor or tuple of tuples of torch.Tensor
-			Shape:
-				[1][batch,n_samples,m_dim] if vectorized
-				[1][modalities][batch,n_samples,m_dim] otherwise
-		nan_mask : torch.Tensor or tuple of torch.Tensor
-			Shape:
-				[batch,modalities] if vectorized
-				[modalities][b] otherwise
+		xs : torch.Tensor
+			Shape: [batch,modalities,m_dim]
+		decoder_xs : tuple of torch.Tensor
+			Shape: [1][batch,n_samples,m_dim]
+		nan_mask : torch.Tensor
+			Shape: [batch,modalities]
 
 		Returns
 		-------
 		log_probs : torch.Tensor or tuple of torch.Tensor
-			Shape:
-				[batch,n_samples,modalities] if vectorized
-				[modalities][batch,n_samples] otherwise
+			Shape: [batch,n_samples,modalities]
 		"""
-		# assert len(decoder_xs) == 1, f"SphericalGaussianLikelihood only takes" \
-		# 		+ f" a single parameter. Found {len(decoder_xs)}."
-		if isinstance(xs, (tuple,list)): # not vectorized
-			raise NotImplementedError
-			print("not vectorized", len(xs))
-			return self._forward_non_vectorized(
-					xs,
-					decoder_xs,
-					nan_mask=nan_mask,
-			)
+		assert len(decoder_xs) == 1, f"SphericalGaussianLikelihood only takes" \
+				+ f" a single parameter. Found {len(decoder_xs)}."
 		# Unwrap the single parameter tuple.
-		decoder_xs = decoder_xs[0]
+		decoder_xs = decoder_xs[0] # [b,s,m]
 		if len(decoder_xs.shape) == 3:
 			decoder_xs = decoder_xs.unsqueeze(2) # [b,s,m,m_dim]
 			xs = xs.unsqueeze(1) # [b,m,m_dim]
-		# Reset the distribution if necessary.
-		if xs.shape[-1] != self.dim or self.dist is None:
-			loc = torch.zeros(xs.shape[-1], device=xs.device)
-			scale = self.std_dev * torch.ones_like(loc)
-			self.dist = Normal(loc, scale)
+		# Make a Gaussian distribution.
+		dist = Normal(
+				torch.zeros(1, device=xs.device),
+				self.std_dev*torch.ones(1, device=xs.device),
+		)
 		log_probs = xs.unsqueeze(1) - decoder_xs # [b,s,m,m_dim]
-		log_probs = self.dist.log_prob(log_probs).sum(dim=3) # [b,s,m]
+		log_probs = dist.log_prob(log_probs).sum(dim=3) # [b,s,m]
 		if nan_mask is not None:
 			temp_mask = (~nan_mask).float().unsqueeze(1).expand(log_probs.shape)
 			assert temp_mask.shape == log_probs.shape, \
@@ -167,47 +154,88 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 		return log_probs
 
 
-	def _forward_non_vectorized(self, xs, decoder_xs, nan_mask=None):
+	def mean(self, like_params):
 		"""
-		Non-vectorized version of `forward`
+		Return the mean value of the likelihood.
 
 		Parameters
 		----------
-		xs : tuple of torch.Tensor
-			Shape: [m][m_dim]
-		decoder_xs : tuple of torch.Tensor
-			Shape : [m][m_dim]
-		"""
-		assert len(decoder_xs) == len(xs), f"{len(decoder_xs)} != {len(xs)}"
-		# Reset the distribution if necessary.
-		if xs[0].shape[-1] != self.dim or self.dist is None:
-			loc = torch.zeros(xs[0].shape[-1], device=xs[0].device)
-			scale = self.std_dev * torch.ones_like(loc)
-			self.dist = Normal(loc, scale)
-		log_probs = [self.dist.log_prob(x.unsqueeze(1) - decoder_x) for \
-				x, decoder_x in zip(xs, decoder_xs)]
-		if nan_mask is not None:
-			temp_masks = [(~mask).float().unsqueeze(-1).unsqueeze(-1) \
-					for mask in nan_mask]
-			log_probs = [log_prob*temp_mask for log_prob,temp_mask in \
-					zip(log_probs,temp_masks)]
-		return [torch.sum(log_prob, dim=2) for log_prob in log_probs]
+		like_params: tuple of torch.tensor
+			Shape: [1][batch,n_samples,m_dim]
 
-
-	def mean(self, like_params, n_samples):
+		Returns
+		-------
+		mean : torch.Tensor
+			Shape: [batch,n_samples,m_dim]
 		"""
-		NOTE: is this used?
-
-		Parameters
-		----------
-		like_params (non-vectorized): list of list of torch.tensor
-			like_params[param_num][modality] shape: [batch,n_samples,z_dim]
-		like_params (vectorized): list of torch.tensor
-			Shape: ...
-		"""
-		if isinstance(like_params[0], (tuple,list)): # not vectorized
-			return [like_param for like_param in like_params[0]]
+		assert len(like_params) == 1, f"SphericalGaussianLikelihood only takes" \
+				+ f" a single parameter. Found {len(like_params)}."
 		return like_params[0]
+
+
+
+class BernoulliLikelihood(AbstractLikelihood):
+
+	def __init__(self, **kwargs):
+		"""
+		Bernoulli likelihood.
+
+		"""
+		super(BernoulliLikelihood, self).__init__()
+
+
+	def forward(self, xs, decoder_xs, nan_mask=None):
+		"""
+		Evaluate the log probability of data under the likelihood.
+
+		Parameters
+		----------
+		xs : torch.Tensor
+			Shape: [batch,modalities,m_dim]
+		decoder_xs : tuple of torch.Tensor
+			Shape: [1][batch,n_samples,m_dim]
+		nan_mask : torch.Tensor
+			Shape: [batch,modalities]
+
+		Returns
+		-------
+		log_probs : torch.Tensor or tuple of torch.Tensor
+			Shape: [batch,n_samples,modalities]
+		"""
+		assert len(decoder_xs) == 1, f"BernoulliLikelihood only takes" \
+				+ f" a single parameter. Found {len(decoder_xs)}."
+		# Unwrap the single parameter tuple.
+		decoder_xs = decoder_xs[0] # [b,s,m]
+		if len(decoder_xs.shape) == 3:
+			decoder_xs = decoder_xs.unsqueeze(2) # [b,s,m,m_dim]
+			xs = xs.unsqueeze(1) # [b,m,m_dim]
+		dist = Bernoulli(logits=decoder_xs)
+		log_probs = dist.log_prob(xs.unsqueeze(1)).sum(dim=3) # [b,s,m]
+		if nan_mask is not None:
+			temp_mask = (~nan_mask).float().unsqueeze(1).expand(log_probs.shape)
+			assert temp_mask.shape == log_probs.shape, \
+					f"{temp_mask.shape} != {log_probs.shape}"
+			log_probs = log_probs * temp_mask # [b,s,m]
+		return log_probs
+
+
+	def mean(self, like_params):
+		"""
+		Return the mean value of the likelihood.
+
+		Parameters
+		----------
+		like_params: tuple of torch.tensor
+			Shape: [1][batch,n_samples,m_dim]
+
+		Returns
+		-------
+		mean : torch.Tensor
+			Shape: [batch,n_samples,m_dim]
+		"""
+		assert len(like_params) == 1, f"BernoulliLikelihood only takes" \
+				+ f" a single parameter. Found {len(like_params)}."
+		return torch.sigmoid(like_params[0])
 
 
 

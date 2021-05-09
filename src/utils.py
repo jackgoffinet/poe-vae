@@ -1,6 +1,10 @@
 """
 Useful functions and classes.
 
+TO DO
+-----
+* detect hash collisions!
+
 Contains
 --------
 * Logger: class
@@ -18,7 +22,7 @@ Contains
 * get_nan_mask: function
 
 """
-__date__ = "January 2021"
+__date__ = "January - May 2021"
 
 
 import numpy as np
@@ -29,8 +33,6 @@ from zlib import adler32
 
 from .param_maps import DATASET_MAP, VAR_STRATEGY_MAP, VAR_POSTERIOR_MAP, \
 		PRIOR_MAP, LIKELIHOOD_MAP, OBJECTIVE_MAP, MODEL_MAP
-# from .encoders_decoders import SplitLinearLayer, NetworkList, \
-# 		EncoderModalityEmbedding, DecoderModalityEmbedding
 
 
 DIR_LEN = 8 # for naming the logging directory
@@ -110,14 +112,25 @@ def make_objective(dataset='mnist_halves', variational_strategy='gaussian_poe',\
 	variational_posterior='diag_gaussian', prior='standard_gaussian', \
 	likelihood='spherical_gaussian', objective='elbo', **kwargs):
 	"""
-	NOTE: HERE!
+	Make an objective.
 
 	Parameters
 	----------
-
+	dataset :
+	variational_strategy :
+	variational_posterior :
+	prior :
+	likelihood :
+	objective :
 	"""
 	# Assemble the VAE.
-	vae = MODEL_MAP[dataset](**kwargs)
+	vae = MODEL_MAP[dataset](
+		variational_strategy=variational_strategy,
+		variational_posterior=variational_posterior,
+		prior=prior,
+		likelihood=likelihood,
+		**kwargs,
+	)
 	assert 'encoder' in vae, f"{MODEL_MAP[dataset]} must have encoder!"
 	assert 'decoder' in vae, f"{MODEL_MAP[dataset]} must have decoder!"
 	# Fill in the missing pieces.
@@ -167,14 +180,30 @@ def check_args(
 	----------
 	TO DO: finish this
 	"""
+	# Make sure we recognize the inputs.
+	assert variational_strategy in VAR_STRATEGY_MAP.keys(), f"Invalid " + \
+			f"variational strategy {variational_strategy}! " + \
+			f"Choose one of: {VAR_STRATEGY_MAP.keys()}"
+	assert variational_posterior in VAR_POSTERIOR_MAP.keys(), f"Invalid " + \
+			f"variational posterior {variational_posterior}! " + \
+			f"Choose one of: {VAR_POSTERIOR_MAP.keys()}"
+	assert prior in PRIOR_MAP.keys(), f"Invalid " + \
+			f"prior {prior}! Choose one of: {PRIOR_MAP.keys()}"
+	assert likelihood in LIKELIHOOD_MAP.keys(), f"Invalid " + \
+			f"likelihood {likelihood}! Choose one of: {LIKELIHOOD_MAP.keys()}"
+	assert objective in OBJECTIVE_MAP.keys(), f"Invalid " + \
+			f"objective {objective}! Choose one of: {OBJECTIVE_MAP.keys()}"
 	# Check von Mises-Fisher-related issues.
 	if variational_strategy == 'vmf_poe':
-		z_dim = (vmf_dim + 1) * n_vmfs
+		z_dim = vmf_dim * n_vmfs
 		assert z_dim == latent_dim, "When using vMF distributions, " + \
-				"`latent_dim` should be `(vmf_dim + 1) * n_vmfs`."
+				"latent_dim should be vmf_dim * n_vmfs."
 		assert variational_posterior == 'vmf_product', \
 				"Only the variational posterior 'vmf_product' can be used with"\
 				+ " the variational strategy 'vmf_poe'."
+		assert prior == 'uniform_hyperspherical', \
+				"Only the prior 'uniform_hyperspherical' can be used with the"\
+				+ " variational strategy 'vmf_poe'."
 	elif variational_strategy == 'gaussian_poe':
 		assert variational_posterior == 'diag_gaussian', "When using a " + \
 				"Gaussian product of experts, the variational posterior " + \
@@ -184,6 +213,7 @@ def check_args(
 	elif variational_strategy == 'loc_scale_ebm':
 		raise NotImplementedError
 	else:
+		print("Invalid variational strategy!")
 		raise NotImplementedError
 
 

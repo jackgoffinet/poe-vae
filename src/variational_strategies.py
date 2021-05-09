@@ -181,12 +181,12 @@ class VmfPoeStrategy(AbstractVariationalStrategy):
 
 		Returns
 		-------
-		kappa_mu : torch.Tensor
-			Shape: ...
+		kappa_mu : tuple of torch.Tensor
+			Shape: [1][b,n_vmfs,vmf_dim+1]
 		"""
 		tuple_flag = isinstance(kappa_mus, tuple) # not vectorized
 		if tuple_flag:
-			kappa_mus = torch.stack(kappa_mus, dim=1) # [b,m,d*n_vmf]
+			kappa_mus = torch.stack(kappa_mus, dim=1) # [b,m,n_vmf*(vmf_dim+1)]
 		assert len(kappa_mus.shape) == 3, f"len({kappa_mus.shape}) != 3"
 		assert kappa_mus.shape[2] == self.n_vmfs * (self.vmf_dim+1)
 		new_shape = kappa_mus.shape[:2]+(self.n_vmfs, self.vmf_dim+1)
@@ -206,7 +206,7 @@ class VmfPoeStrategy(AbstractVariationalStrategy):
 			kappa_mus = kappa_mus * temp_mask
 		# Combine all the experts.
 		kappa_mu = torch.sum(kappa_mus, dim=1) # [b,n_vmfs,vmf_dim+1]
-		return kappa_mu
+		return (kappa_mu,)
 
 
 
