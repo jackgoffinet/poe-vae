@@ -54,7 +54,7 @@ def get_vae(
 
 
 def make_single_encoder(variational_strategy='gaussian_poe', latent_dim=20,
-	vmf_dim=4, n_vmfs=5, **kwargs):
+	vmf_dim=4, n_vmfs=5, theta_dim=4, **kwargs):
 	if variational_strategy == 'gaussian_poe':
 		z_dim = latent_dim
 		return nn.Sequential(
@@ -80,6 +80,19 @@ def make_single_encoder(variational_strategy='gaussian_poe', latent_dim=20,
 			nn.Linear(200,z_dim),
 			GatherLayer(),
 		)
+	elif variational_strategy == 'loc_scale_ebm':
+		z_dim = latent_dim
+		return nn.Sequential(
+			nn.Sequential(
+				nn.Linear(784//2,500),
+				nn.ReLU(),
+				nn.Linear(500,500),
+				nn.ReLU(),
+				nn.Linear(500,200),
+				nn.ReLU(),
+			),
+			SplitLinearLayer(200,(theta_dim,z_dim,z_dim)),
+		)
 	else:
 		err_str = f"{variational_strategy} not implemented for " + \
 				f"mnist_halves_model!"
@@ -89,7 +102,7 @@ def make_single_encoder(variational_strategy='gaussian_poe', latent_dim=20,
 
 def make_decoder(variational_strategy='gaussian_poe', latent_dim=20, \
 	vmf_dim=4, n_vmfs=5, **kwargs):
-	if variational_strategy == 'gaussian_poe':
+	if variational_strategy in ['gaussian_poe', 'loc_scale_ebm']:
 		z_dim = latent_dim
 	elif variational_strategy == 'vmf_poe':
 		z_dim = (vmf_dim + 1) * n_vmfs

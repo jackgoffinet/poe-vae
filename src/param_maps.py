@@ -20,7 +20,6 @@ VAR_STRATEGY_MAP = {
 	'gaussian_poe': GaussianPoeStrategy,
 	'gaussian_moe': GaussianMoeStrategy,
 	'vmf_poe': VmfPoeStrategy,
-	'ebm': EbmStrategy,
 	'loc_scale_ebm': LocScaleEbmStrategy,
 }
 
@@ -28,12 +27,11 @@ VAR_STRATEGY_MAP = {
 # Variational posteriors
 from .variational_posteriors import DiagonalGaussianPosterior, \
 		DiagonalGaussianMixturePosterior, VmfProductPosterior, \
-		EbmPosterior, LocScaleEbmPosterior
+		LocScaleEbmPosterior
 VAR_POSTERIOR_MAP = {
 	'diag_gaussian': DiagonalGaussianPosterior,
 	'diag_gaussian_mixture': DiagonalGaussianMixturePosterior,
 	'vmf_product': VmfProductPosterior,
-	'ebm': EbmPosterior,
 	'loc_scale_ebm': LocScaleEbmPosterior,
 }
 

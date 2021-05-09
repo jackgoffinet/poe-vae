@@ -210,47 +210,6 @@ class VmfPoeStrategy(AbstractVariationalStrategy):
 
 
 
-class EbmStrategy(AbstractVariationalStrategy):
-	EPS = 1e-5
-
-	def __init__(self, **kwargs):
-		"""
-		EBM strategy: just pass the energy function parameters to the EBM.
-
-		Parameters
-		----------
-		...
-		"""
-		super(EbmStrategy, self).__init__()
-
-	def forward(self, thetas, nan_mask=None):
-		"""
-
-
-		Parameters
-		----------
-		thetas (vectorized): list of torch.Tensor
-			Shape: ???
-		thetas (non-vectorized): list of torch.Tensor
-			Shape: [m][b,theta_dim]
-		nan_mask : torch.Tensor or list of torch.Tensor
-			Indicates where data is missing.
-
-		Returns
-		-------
-		thetas : torch.Tensor
-			Passed from input.
-		nan_mask : torch.Tensor
-			Passed from input.
-		"""
-		tuple_flag = isinstance(thetas, tuple) # not vectorized
-		if tuple_flag:
-			thetas = torch.stack(thetas, dim=1)
-			nan_mask = torch.stack(nan_mask, dim=1)
-		return thetas, nan_mask
-
-
-
 class LocScaleEbmStrategy(AbstractVariationalStrategy):
 	EPS = 1e-5
 
@@ -274,14 +233,14 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 
 		Parameters
 		----------
-		thetas (vectorized): list of torch.Tensor
-			Shape: ???
-		thetas (non-vectorized): list of torch.Tensor
-			Shape: [m][b,theta_dim]
+		thetas: list of torch.Tensor
+			Shape:
+				??? if vectorized
+				[m][b,theta_dim] otherwise
 		means : list of torch.Tensor
-			means[modality] shape: [batch, z_dim]
+			Shape: [m][batch, z_dim]
 		log_precisions : list of torch.Tensor
-			log_precisions[modality] shape: [batch, z_dim]
+			Shape: [m][batch, z_dim]
 		nan_mask : torch.Tensor or list of torch.Tensor
 			Indicates where data is missing.
 
@@ -300,17 +259,14 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 		nan_mask : torch.Tensor
 			Shape : [b,m]
 		"""
-		tuple_flag = isinstance(means, tuple) # not vectorized
-		if tuple_flag:
+		if isinstance(means, (tuple,list)):
 			thetas = torch.stack(thetas, dim=1)
 			nan_mask = torch.stack(nan_mask, dim=1)
 			means = torch.stack(means, dim=1) # [b,m,z]
-			log_precisions = torch.stack(log_precisions, dim=1)
-			precisions = log_precisions.exp() # [b,m,z]
-		else:
-			precisions = log_precisions.exp()
+			log_precisions = torch.stack(log_precisions, dim=1) # [b,m,z]
+		precisions = log_precisions.exp() # [b,m,z]
 		if nan_mask is not None:
-			assert len(precisions.shape) == 3
+			assert len(precisions.shape) == 3, f"len({precisions.shape}) != 3"
 			temp_mask = (~nan_mask).float().unsqueeze(-1)
 			temp_mask = temp_mask.expand(-1,-1,precisions.shape[2])
 			precisions = precisions * temp_mask

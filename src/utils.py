@@ -4,17 +4,13 @@ Useful functions and classes.
 TO DO
 -----
 * detect hash collisions!
+* Remove get_nan_mask
 
 Contains
 --------
 * Logger: class
-* make_datasets: function
 * make_dataloaders: function
-* make_vae: function
 * make_objective: function
-* make_encoder: function
-* make_decoder: function
-* make_likelihood: function
 * check_args: function
 * hash_json_str: function
 * generate: function
@@ -181,23 +177,26 @@ def check_args(
 	TO DO: finish this
 	"""
 	# Make sure we recognize the inputs.
-	assert variational_strategy in VAR_STRATEGY_MAP.keys(), f"Invalid " + \
-			f"variational strategy {variational_strategy}! " + \
+	assert variational_strategy in VAR_STRATEGY_MAP.keys(), \
+			f"Invalid variational strategy {variational_strategy}! " + \
 			f"Choose one of: {VAR_STRATEGY_MAP.keys()}"
-	assert variational_posterior in VAR_POSTERIOR_MAP.keys(), f"Invalid " + \
-			f"variational posterior {variational_posterior}! " + \
+	assert variational_posterior in VAR_POSTERIOR_MAP.keys(), \
+			f"Invalid variational posterior {variational_posterior}! " + \
 			f"Choose one of: {VAR_POSTERIOR_MAP.keys()}"
-	assert prior in PRIOR_MAP.keys(), f"Invalid " + \
-			f"prior {prior}! Choose one of: {PRIOR_MAP.keys()}"
-	assert likelihood in LIKELIHOOD_MAP.keys(), f"Invalid " + \
-			f"likelihood {likelihood}! Choose one of: {LIKELIHOOD_MAP.keys()}"
-	assert objective in OBJECTIVE_MAP.keys(), f"Invalid " + \
-			f"objective {objective}! Choose one of: {OBJECTIVE_MAP.keys()}"
-	# Check von Mises-Fisher-related issues.
+	assert prior in PRIOR_MAP.keys(), \
+			f"Invalid prior {prior}! Choose one of: {PRIOR_MAP.keys()}"
+	assert likelihood in LIKELIHOOD_MAP.keys(), \
+			"Invalid likelihood {likelihood}! " + \
+			f"Choose one of: {LIKELIHOOD_MAP.keys()}"
+	assert objective in OBJECTIVE_MAP.keys(), \
+			f"Invalid objective {objective}! " + \
+			"Choose one of: {OBJECTIVE_MAP.keys()}"
+	# Check variational strategy-related issues.
 	if variational_strategy == 'vmf_poe':
 		z_dim = vmf_dim * n_vmfs
-		assert z_dim == latent_dim, "When using vMF distributions, " + \
-				"latent_dim should be vmf_dim * n_vmfs."
+		assert z_dim == latent_dim, \
+				"When using vMF distributions, latent_dim should be " + \
+				"vmf_dim * n_vmfs."
 		assert variational_posterior == 'vmf_product', \
 				"Only the variational posterior 'vmf_product' can be used with"\
 				+ " the variational strategy 'vmf_poe'."
@@ -205,16 +204,18 @@ def check_args(
 				"Only the prior 'uniform_hyperspherical' can be used with the"\
 				+ " variational strategy 'vmf_poe'."
 	elif variational_strategy == 'gaussian_poe':
-		assert variational_posterior == 'diag_gaussian', "When using a " + \
-				"Gaussian product of experts, the variational posterior " + \
-				"should be diagonal Gaussian."
+		assert variational_posterior == 'diag_gaussian', \
+				"When using a Gaussian product of experts, the variational " + \
+				"posterior must be diagonal Gaussian."
 	elif variational_strategy == 'gaussian_moe':
 		raise NotImplementedError
 	elif variational_strategy == 'loc_scale_ebm':
-		raise NotImplementedError
-	else:
-		print("Invalid variational strategy!")
-		raise NotImplementedError
+		assert variational_posterior == 'loc_scale_ebm', \
+				"Only the variational posterior 'loc_scale_ebm' can be used" + \
+				" with the variational_strategy 'loc_scale_ebm'."
+		assert objective in ['iwae', 'dreg_iwae'], \
+				"Only the IWAE or DReG IWAE objectives can be used with a " + \
+				"Location/Scale EBM variational strategy."
 
 
 def hash_json_str(json_str):

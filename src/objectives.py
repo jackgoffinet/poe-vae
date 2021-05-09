@@ -143,14 +143,6 @@ class VaeObjective(torch.nn.Module):
 		log_likes = self.likelihood(x, likelihood_params, \
 				nan_mask=nan_mask) # [b,s,m]
 		# Sum over modality dimension.
-		# if isinstance(log_likes, tuple): # not vectorized
-		# 	raise NotImplementedError
-		# 	print("here")
-		# 	for x in log_likes:
-		# 		print(type(x), len(x)) # list
-		# 	quit()
-		# 	log_likes = sum(log_like for log_like in log_likes) # [b,s]
-		# else:
 		log_likes = torch.sum(log_likes, dim=2) # [b,s]
 		# if torch.isnan(log_likes).sum() > 0:
 		# 	print("log_likes VaeObjective")
@@ -159,6 +151,7 @@ class VaeObjective(torch.nn.Module):
 
 	def estimate_marginal_log_like(self, x, n_samples=1000, keepdim=False):
 		"""
+		Estimate the MLL of the data `x`.
 
 		Parameters
 		----------
@@ -210,11 +203,14 @@ class StandardElbo(VaeObjective):
 		Parameters
 		----------
 		x : list of torch.Tensor or torch.Tensor
-			Shape: [modalities][batch,m_dim] or [batch,modalities,m_dim]
+			Shape:
+				[batch,modalities,m_dim] if vectorized
+				[modalities][batch,m_dim] otherwise
 
 		Returns
 		-------
 		loss : torch.Tensor
+			Shape: []
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		x, nan_mask = apply_nan_mask(x)
@@ -252,12 +248,23 @@ class IwaeElbo(VaeObjective):
 
 		Parameters
 		----------
-		x : torch.Tensor
+		x : list of torch.Tensor or torch.Tensor
+			Shape:
+				[batch,modalities,m_dim] if vectorized
+				[modalities][batch,m_dim] otherwise
+
+		Returns
+		-------
+		loss : torch.Tensor
+			Shape: []
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		x, nan_mask = apply_nan_mask(x)
 		# Encode.
-		# [b,s,z], [b,s], [b,s]
+		# Encode.
+		# z_samples : [b,s,z]
+		# log_qz : [b,s]
+		# log_pz : [b,s]
 		z_samples, log_qz, log_pz = self.encode(x, nan_mask, n_samples=self.k)
 		assert log_pz.shape[1] == self.k # assert k samples
 		assert log_qz.shape[1] == self.k # assert k samples
