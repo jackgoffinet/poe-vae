@@ -54,19 +54,20 @@ class AbstractPrior(torch.nn.Module):
 
 class StandardGaussianPrior(AbstractPrior):
 
-	def __init__(self, latent_dim=20, **kwargs):
+	def __init__(self, device='cpu', latent_dim=20, **kwargs):
 		"""
 		Standard Gaussian prior distribution.
 
 		Parameters
 		----------
+		device : str or torch.device
 		latent_dim : int, optional
 		"""
 		super(StandardGaussianPrior, self).__init__()
 		self.latent_dim = latent_dim
 		self.dist = Normal(
-			torch.zeros(latent_dim),
-			torch.ones(latent_dim),
+			torch.zeros(latent_dim, device=device),
+			torch.ones(latent_dim, device=device),
 		)
 
 
@@ -104,19 +105,20 @@ class StandardGaussianPrior(AbstractPrior):
 
 class UniformHypersphericalPrior(AbstractPrior):
 
-	def __init__(self, n_vmfs=5, vmf_dim=4, **kwargs):
+	def __init__(self, device='cpu', n_vmfs=5, vmf_dim=4, **kwargs):
 		"""
 		Uniform hyperspherical prior distribution.
 
 		Parameters
 		-----------
+		device : str or torch.device
 		n_vmfs : int, optional
 		vmf_dim : int, optional
 		"""
 		super(UniformHypersphericalPrior, self).__init__()
 		self.n_vmfs = n_vmfs
 		self.vmf_dim = vmf_dim
-		self.dist = HypersphericalUniform(self.vmf_dim-1)
+		self.dist = HypersphericalUniform(self.vmf_dim-1, device=device)
 
 
 	def forward(self, x):

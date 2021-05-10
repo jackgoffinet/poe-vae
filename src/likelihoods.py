@@ -30,7 +30,7 @@ class AbstractLikelihood(torch.nn.Module):
 		----------
 		xs : torch.Tensor or tuple of torch.Tensor
 			Shape:
-			 	[batch,modalities,m_dim] if vectorized
+				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
 		decoder_xs : tuple of torch.Tensor or tuple of tuples of torch.Tensor
 			Shape:
@@ -49,6 +49,40 @@ class AbstractLikelihood(torch.nn.Module):
 				[modalities][batch,n_samples] otherwise
 		"""
 		raise NotImplementedError
+
+
+	def mean(self, like_params):
+		"""
+		Return the mean value of the likelihood.
+
+		Parameters
+		----------
+		like_params: tuple of torch.tensor
+			Shape: [1][batch,n_samples,m_dim]
+
+		Returns
+		-------
+		mean : torch.Tensor
+			Shape: [batch,n_samples,m_dim]
+		"""
+		raise NotImplementedError
+
+
+	# def rsample(self, like_params):
+	# 	"""
+	# 	Return a sample from the likelihood.
+	#
+	# 	Parameters
+	# 	----------
+	# 	like_params: tuple of torch.tensor
+	# 		Shape: [1][batch,n_samples,m_dim]
+	#
+	# 	Returns
+	# 	-------
+	# 	sample : torch.Tensor
+	# 		Shape: [batch,n_samples,m_dim]
+	# 	"""
+	# 	raise NotImplementedError
 
 
 
@@ -95,6 +129,25 @@ class GroupedLikelihood(AbstractLikelihood):
 		gen = zip(self.likelihoods, xs, like_params, nan_mask)
 		return torch.cat([like(i,j,k) for like,i,j,k in gen], dim=2)
 
+
+	def mean(self, like_params):
+		"""
+		Return the mean value of the likelihood.
+
+		Parameters
+		----------
+		like_params: tuple of torch.tensor
+			Shape: [1][batch,n_samples,m_dim]
+
+		Returns
+		-------
+		mean : tuple of torch.Tensor
+			Shape: [modalities][batch,n_samples,m_dim]
+		"""
+		# Transpose first two dimensions of like_params.
+		like_params = tuple(tuple(p) for p in zip(*like_params))
+		gen = zip(self.likelihoods,like_params)
+		return tuple(like.mean(p)[0] for like,p in gen)
 
 
 class SphericalGaussianLikelihood(AbstractLikelihood):
@@ -165,12 +218,12 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 
 		Returns
 		-------
-		mean : torch.Tensor
-			Shape: [batch,n_samples,m_dim]
+		mean : tuple of torch.Tensor
+			Shape: [1][batch,n_samples,m_dim]
 		"""
 		assert len(like_params) == 1, f"SphericalGaussianLikelihood only takes" \
 				+ f" a single parameter. Found {len(like_params)}."
-		return like_params[0]
+		return (like_params[0],)
 
 
 
@@ -230,12 +283,12 @@ class BernoulliLikelihood(AbstractLikelihood):
 
 		Returns
 		-------
-		mean : torch.Tensor
-			Shape: [batch,n_samples,m_dim]
+		mean : tuple of torch.Tensor
+			Shape: [1][batch,n_samples,m_dim]
 		"""
 		assert len(like_params) == 1, f"BernoulliLikelihood only takes" \
 				+ f" a single parameter. Found {len(like_params)}."
-		return torch.sigmoid(like_params[0])
+		return (torch.sigmoid(like_params[0]),)
 
 
 

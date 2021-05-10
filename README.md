@@ -2,8 +2,8 @@
 
 ## product of experts variational autoencoders for multimodal data
 
-
-This repo contains ...
+This repo contains code for quickly and easily implementing multimodal
+variational autoencoders (VAEs).
 
 
 ### Usage
@@ -77,19 +77,39 @@ for epoch in range(100):
 
 ```
 
+### Methods Implemented
+* [MVAE](https://arxiv.org/abs/1802.05335):
+   `--variational-strategy=gaussian_poe --variational-posterior=diag_gaussian --prior=standard_gaussian --objective=wu_goodman_elbo`
+* [MMVAE](https://arxiv.org/abs/1911.03393)
+   `--variational-strategy=gaussian_moe --variational-posterior=diag_gaussian_mixture --prior=standard_gaussian --objective=mmvae_quadratic`
+* [s-VAE](http://arxiv.org/abs/1804.00891) (single-modality)
+   `--variational-strategy=vmf_poe --variational-posterior=vmf_product --prior=uniform_hyperspherical --objective=elbo`
+* [MIWAE](https://arxiv.org/abs/1812.02633) ...
+* [partial VAE](https://arxiv.org/abs/1809.11142) TO DO
+* [VAEVAE](https://arxiv.org/abs/1912.05075)?
+* [MoPoE VAE](https://arxiv.org/abs/2105.02470)?
+
+
 ### Applying this to your own data
-...
+Check out `src/datasets/` for some examples of how to do this. To use the
+existing training framework, you will also have to modify `DATASET_MAP` and
+`MODEL_MAP` in `src/param_maps.py`.
+
 
 #### Dependencies
-* [Python3](https://www.python.org/) (3.5+)
+* [Python3](https://www.python.org/) (3.6+)
 * [PyTorch](https://pytorch.org) (1.1+)
 * [Python Fire](https://github.com/google/python-fire) (only used in `main.py`)
 
 
 #### See also:
-* [MVAE repo](https://github.com/mhw32/multimodal-vae-public)
-* [MMVAE repo](https://github.com/iffsid/mmvae)
-* [Hyperspherical VAE Repo](https://github.com/nicola-decao/s-vae-pytorch)
+* [MVAE repo](https://github.com/mhw32/multimodal-vae-public), uses a mixture of
+  experts strategy for combining evidence across modalities.
+* [MMVAE repo](https://github.com/iffsid/mmvae), uses a product of experts
+  strategy for combining evidence across modalities.
+* [Hyperspherical VAE Repo](https://github.com/nicola-decao/s-vae-pytorch), a
+  VAE with a latent space defined on an n-sphere with von
+  Mises-Fisher-distributed approximate posteriors.
 
 #### TO DO
 
@@ -102,3 +122,5 @@ for epoch in range(100):
 20. Student experts
 21. Compare network architectures w/ other papers
 22. partial-VAE implementation
+23. Clean up the dataset/model correspondence
+24. Test generate/reconstruct

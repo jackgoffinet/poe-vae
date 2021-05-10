@@ -14,6 +14,8 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 
+from .datasets import GENERATE_FN, TRAIN_RECONSTRUCT_FN, TEST_RECONSTRUCT_FN
+
 
 
 class MnistHalvesDataset(Dataset):
@@ -53,18 +55,18 @@ class MnistHalvesDataset(Dataset):
 		return self.view_1[index], self.view_2[index]
 
 
-	def make_plots(self, model, datasets, dataloaders, exp_dir):
+	def make_plots(self, objective, loaders, exp_dir):
 		# Make filenames.
 		generate_fn = os.path.join(exp_dir, GENERATE_FN)
 		train_reconstruct_fn = os.path.join(exp_dir, TRAIN_RECONSTRUCT_FN)
 		test_reconstruct_fn = os.path.join(exp_dir, TEST_RECONSTRUCT_FN)
 		# Plot generated data.
-		generated_data = generate(model, n_samples=5) # [m,b,s,x]
+		generated_data = objective.generate(n_samples=5) # [m,b,s,x]
 		self.plot(generated_data, generate_fn)
 		# Plot train reconstructions.
-		for batch in dataloaders['train']:
+		for batch in loaders['train']:
 			data = [b[:5] for b in batch]
-			recon_data = reconstruct(model, data) # [m,b,s,x]
+			recon_data = objective.reconstruct(data) # [m,b,s,x]
 			if len(recon_data.shape) == 5: # stratified sampling
 				recon_data = recon_data[:,:,:,np.random.randint(recon_data.shape[3])]
 			# recon_data = np.swapaxes(recon_data, 0, 1)
@@ -73,9 +75,9 @@ class MnistHalvesDataset(Dataset):
 		data = data.reshape(recon_data.shape) # [m,b,s,x]
 		self.plot([data,recon_data], train_reconstruct_fn)
 		# Plot test reconstructions.
-		for batch in dataloaders['test']:
+		for batch in loaders['test']:
 			data = [b[:5] for b in batch]
-			recon_data = reconstruct(model, data) # [m,b,s,x]
+			recon_data = objective.reconstruct(data) # [m,b,s,x]
 			if len(recon_data.shape) == 5: # stratified sampling
 				recon_data = recon_data[:,:,:,np.random.randint(recon_data.shape[3])]
 			break
@@ -129,11 +131,14 @@ def generate(vae, n_samples=9, decoder_noise=False):
 		z_samples = vae.prior.rsample(n_samples=n_samples) # [1,n,z]
 		like_params = vae.decoder(z_samples) # [param_num][m][1,n,x]
 		if decoder_noise:
-			assert hasattr(vae.likelihood, 'rsample')
+			assert hasattr(vae.likelihood, 'rsample'), \
+					f"type {type(vae.likelihood)} has no rsample attribute!"
 			generated = vae.likelihood.rsample(like_params, n_samples=n_samples)
 		else:
-			assert hasattr(vae.likelihood, 'mean')
-			generated = vae.likelihood.mean(like_params, n_samples=n_samples)
+			assert hasattr(vae.likelihood, 'mean'), \
+					f"type {type(vae.likelihood)} has no mean attribute!"
+			generated = vae.likelihood.mean(like_params)
+	generated = torch.cat(generated, dim=)
 	return np.array([g.detach().cpu().numpy() for g in generated])
 
 
@@ -143,15 +148,19 @@ def reconstruct(vae, x, decoder_noise=False):
 
 	Parameters
 	----------
+	vae : torch.nn.ModuleDict
+	x : ...
+	decoder_noise : bool, optional
 
 	Returns
 	-------
-
+	reconstruction : numpy.ndarray
+		Shape: ???
 	"""
 	vae.eval()
 	with torch.no_grad():
 		nan_mask = get_nan_mask(x)
-		if type(x) == type([]): # not vectorized, shape: [m][batch]
+		if isinstance(x, (tuple, list)): # not vectorized, shape: [m][batch]
 			for i in range(len(x)):
 				x[i][nan_mask[i]] = 0.0
 		else: # vectorized modalities, shape: [batch,m]
@@ -165,11 +174,13 @@ def reconstruct(vae, x, decoder_noise=False):
 		z_samples, _ = vae.variational_posterior(*var_post_params)
 		like_params = vae.decoder(z_samples)
 		if decoder_noise:
-			assert hasattr(vae.likelihood, 'rsample')
+			assert hasattr(vae.likelihood, 'rsample'), \
+					f"type {type(vae.likelihood)} has no rsample attribute!"
 			generated = vae.likelihood.rsample(like_params, n_samples=1)
 		else:
-			assert hasattr(vae.likelihood, 'mean')
-			generated = vae.likelihood.mean(like_params, n_samples=1)
+			assert hasattr(vae.likelihood, 'mean'), \
+					f"type {type(vae.likelihood)} has no mean attribute!"
+			generated = vae.likelihood.mean(like_params)
 	if type(x) == type([]):
 		return np.array([g.detach().cpu().numpy() for g in generated])
 	return generated.detach().cpu().numpy()
@@ -178,7 +189,7 @@ def reconstruct(vae, x, decoder_noise=False):
 
 def get_nan_mask(xs):
 	"""Return a mask indicating which minibatch items are NaNs."""
-	if type(xs) == type([]):
+	if isinstance(xs, (tuple, list)):
 		return [torch.isnan(x[:,0]) for x in xs]
 	else:
 		return torch.isnan(xs[:,:,0]) # [b,m]

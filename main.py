@@ -123,6 +123,7 @@ def estimate_marginal_log_like(objective, loader, k=2000, mini_k=128, \
 	est_mll : float
 		Estimated data marginal log likelihood.
 	"""
+	objective.eval()
 	assert reduction in ['sum', 'mean']
 	batch_res = []
 	with torch.no_grad():
@@ -168,7 +169,7 @@ def mll_helper(objective, dataloaders, epoch, agg, train_mll=False):
 		print("Train MLL time:", mll, ", time:", round(toc-tic,2))
 
 
-def save_aggregator(agg):
+def save_aggregator(agg, agg_fn):
 	"""Save the data aggregrator."""
 	torch.save(agg, agg_fn)
 
@@ -326,8 +327,9 @@ def main(
 	# Set up CUDA.
 	cuda = not no_cuda and torch.cuda.is_available()
 	device = torch.device('cuda' if cuda else 'cpu')
+	args['device'] = device
 	# Make Dataloaders.
-	dataloaders = make_dataloaders(device, **args)
+	dataloaders = make_dataloaders(**args)
 	# Make the objective.
 	objective = make_objective(**args).to(device)
 	# Make the optimizer.
@@ -349,9 +351,9 @@ def main(
 			mll_helper(objective, dataloaders, epoch, agg)
 	epoch = prev_epochs + epochs
 	# Save the aggregrator.
-	save_aggregator(agg)
+	save_aggregator(agg, agg_fn)
 	# Plot reconstructions and generations.
-	datasets['train'].make_plots(model, datasets, dataloaders, exp_dir)
+	dataloaders['train'].dataset.make_plots(objective, dataloaders, exp_dir)
 	# Save the model/objective.
 	save_state(objective, optimizer, epoch)
 

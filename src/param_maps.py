@@ -5,17 +5,23 @@ Import different VAE components. Map component names to classes.
 __date__ = "January - May 2021"
 
 
-
+# Datasets
 from .datasets import MnistHalvesDataset
 DATASET_MAP = {
 	'mnist_halves': MnistHalvesDataset,
 }
-DATASET_KEYS = sorted(list(DATASET_MAP.keys()))
+
+
+# Models
+from .mnist_halves_model import get_vae as mnist_halves_get_vae
+MODEL_MAP = {
+	'mnist_halves': mnist_halves_get_vae,
+}
 
 
 # Variational strategies
 from .variational_strategies import GaussianPoeStrategy, GaussianMoeStrategy, \
-		VmfPoeStrategy, EbmStrategy, LocScaleEbmStrategy
+		VmfPoeStrategy, LocScaleEbmStrategy
 VAR_STRATEGY_MAP = {
 	'gaussian_poe': GaussianPoeStrategy,
 	'gaussian_moe': GaussianMoeStrategy,
@@ -59,13 +65,7 @@ OBJECTIVE_MAP = {
 	'iwae': IwaeElbo,
 	'dreg_iwae': DregIwaeElbo,
 	'mmvae_quadratic': MmvaeQuadraticElbo,
-}
-
-
-# Models
-from .mnist_halves_model import get_vae as mnist_halves_get_vae
-MODEL_MAP = {
-	'mnist_halves': mnist_halves_get_vae,
+	'wu_goodman_elbo': None,
 }
 
 
