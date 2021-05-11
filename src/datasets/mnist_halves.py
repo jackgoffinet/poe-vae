@@ -64,7 +64,7 @@ class MnistHalvesDataset(Dataset):
 		train_reconstruct_fn = os.path.join(exp_dir, TRAIN_RECONSTRUCT_FN)
 		test_reconstruct_fn = os.path.join(exp_dir, TEST_RECONSTRUCT_FN)
 		# Plot generated data.
-		generated_data = objective.generate(n_samples=5, likelihood_noise=True) # [m,1,s,m_dim]
+		generated_data = objective.generate(n_samples=5) # [m,1,s,m_dim]
 		self.plot(generated_data, generate_fn)
 		# Plot train reconstructions.
 		for batch in loaders['train']:

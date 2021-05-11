@@ -37,9 +37,7 @@ class AbstractLikelihood(torch.nn.Module):
 				[1][batch,n_samples,m_dim] if vectorized
 				[1][modalities][batch,n_samples,m_dim] otherwise
 		nan_mask : torch.Tensor or tuple of torch.Tensor
-			Shape:
-				[batch,modalities] if vectorized
-				[modalities][b] otherwise
+			Shape: [batch,modalities]
 
 		Returns
 		-------
@@ -111,8 +109,8 @@ class GroupedLikelihood(AbstractLikelihood):
 			Shape: [modalities][batch,m_dim]
 		like_params : tuple of tuple of torch.Tensor
 			Shape: [n_params][m][b,s,x]
-		nan_mask : None or tuple of torch.Tensor
-			Shape: [modalities][b]
+		nan_mask : None or torch.Tensor
+			Shape: [batch,modalities]
 
 		Returns
 		-------
@@ -122,7 +120,7 @@ class GroupedLikelihood(AbstractLikelihood):
 		if nan_mask is None:
 			nan_mask = [None for _ in self.likelihoods]
 		else:
-			nan_mask = [mask.unsqueeze(1) for mask in nan_mask]
+			nan_mask = [nan_mask[:,i:i+1] for i in range(nan_mask.shape[1])]
 		# Transpose first two dimensions of like_params.
 		like_params = tuple(tuple(p) for p in zip(*like_params))
 		# Send each modality to its own likelihood.
@@ -167,7 +165,7 @@ class GroupedLikelihood(AbstractLikelihood):
 		# Transpose first two dimensions of like_params.
 		like_params = tuple(tuple(p) for p in zip(*like_params))
 		gen = zip(self.likelihoods,like_params)
-		return tuple(like.sample(p)[0] for like,p in gen)
+		return tuple(like.sample(p)[0] for like, p in gen)
 
 
 
@@ -267,8 +265,8 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 		like_params = like_params[0] # [b,s,m]
 		# Make a Gaussian distribution.
 		dist = Normal(
-				torch.zeros(1, device=like_params.device),
-				self.std_dev*torch.ones(1, device=like_params.device),
+				like_params,
+				self.std_dev*torch.ones_like(like_params),
 		)
 		samples = dist.sample()
 		return (samples,)

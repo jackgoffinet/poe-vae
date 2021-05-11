@@ -9,7 +9,7 @@ TO DO
 -----
 * The GaussianPoeStrategy assumes a unit normal prior. Generalize this.
 """
-__date__ = "January 2021"
+__date__ = "January - May 2021"
 
 
 import torch
@@ -30,8 +30,9 @@ class AbstractVariationalStrategy(torch.nn.Module):
 		Parameters
 		----------
 		modality_params : ...
-		nan_mask : torch.Tensor or list of torch.Tensor
+		nan_mask : torch.Tensor
 			Indicates where data is missing.
+			Shape: [b,m]
 
 		Returns
 		-------
@@ -52,9 +53,6 @@ class GaussianPoeStrategy(AbstractVariationalStrategy):
 		----
 		* Assumes a standard normal prior!
 
-		Parameters
-		----------
-		...
 		"""
 		super(GaussianPoeStrategy, self).__init__()
 
@@ -65,12 +63,17 @@ class GaussianPoeStrategy(AbstractVariationalStrategy):
 
 		Parameters
 		----------
-		means : list of torch.Tensor
-			means[modality] shape: [batch, z_dim]
-		log_precisions : list of torch.Tensor
-			log_precisions[modality] shape: [batch, z_dim]
-		nan_mask : torch.Tensor or list of torch.Tensor
+		means : torch.Tensor or list of torch.Tensor
+			Shape:
+				[batch,modality,z_dim] if vectorized
+				[modality][batch,z_dim] otherwise
+		log_precisions : torch.Tensor or list of torch.Tensor
+			Shape:
+				[batch,modality,z_dim] if vectorized
+				[modality][batch,z_dim] otherwise
+		nan_mask : torch.Tensor
 			Indicates where data is missing.
+			Shape: [batch,modality]
 
 		Returns
 		-------
@@ -79,16 +82,12 @@ class GaussianPoeStrategy(AbstractVariationalStrategy):
 		precision : torch.Tensor
 			Shape: [batch, z_dim]
 		"""
-		tuple_flag = isinstance(means, tuple) # not vectorized
-		if tuple_flag:
+		if isinstance(means, (tuple,list)): # not vectorized
 			means = torch.stack(means, dim=1) # [b,m,z]
-			log_precisions = torch.stack(log_precisions, dim=1)
+			log_precisions = torch.stack(log_precisions, dim=1) # [b,m,z]
 		precisions = torch.exp(log_precisions) # [b,m,z]
 		if nan_mask is not None:
-			if tuple_flag:
-				temp_mask = torch.stack(nan_mask, dim=1)
-			else:
-				temp_mask = nan_mask
+			temp_mask = nan_mask
 			assert len(precisions.shape) == 3
 			temp_mask = (~temp_mask).float().unsqueeze(-1)
 			temp_mask = temp_mask.expand(-1,-1,precisions.shape[2])
@@ -124,8 +123,9 @@ class GaussianMoeStrategy(torch.nn.Module):
 		means : list of torch.Tensor
 			means[modality] = [...fill in dimensions...]
 		log_precisions : list of torch.Tensor
-		nan_mask : torch.Tensor or list of torch.Tensor
+		nan_mask : torch.Tensor
 			Indicates where data is missing.
+			Shape: [b,m]
 
 		Returns
 		-------
@@ -137,10 +137,7 @@ class GaussianMoeStrategy(torch.nn.Module):
 		precisions = torch.exp(log_precisions) # [b,m,z]
 		# Where things are NaNs, replace mixture components with the prior.
 		if nan_mask is not None:
-			if tuple_flag:
-				temp_mask = torch.stack(nan_mask, dim=1)
-			else:
-				temp_mask = nan_mask
+			temp_mask = nan_mask
 			assert len(precisions.shape) == 3
 			temp_mask = (~temp_mask).float().unsqueeze(-1)
 			temp_mask = temp_mask.expand(-1,-1,precisions.shape[2])
@@ -174,10 +171,11 @@ class VmfPoeStrategy(AbstractVariationalStrategy):
 		----------
 		kappa_mus : torch.Tensor or list of torch.Tensor
 			Shape:
-				[b,m,n_vmfs*(vmf_dim+1)]
-				[m][b,n_vmfs*(vmf_dim+1)]
-		nan_mask : torch.Tensor or list of torch.Tensor
+				[b,m,n_vmfs*(vmf_dim+1)] if vectorized
+				[m][b,n_vmfs*(vmf_dim+1)] otherwise
+		nan_mask : torch.Tensor
 			Indicates where data is missing.
+			Shape: [b,m]
 
 		Returns
 		-------
@@ -192,10 +190,7 @@ class VmfPoeStrategy(AbstractVariationalStrategy):
 		new_shape = kappa_mus.shape[:2]+(self.n_vmfs, self.vmf_dim+1)
 		kappa_mus = kappa_mus.view(new_shape) # [b,m,n_vmfs,vmf_dim+1]
 		if nan_mask is not None:
-			if tuple_flag:
-				temp_mask = torch.stack(nan_mask, dim=1) # [b,m]
-			else:
-				temp_mask = nan_mask # [b,m]
+			temp_mask = nan_mask # [b,m]
 			temp_mask = (~temp_mask).float().unsqueeze(-1).unsqueeze(-1)
 			temp_mask = temp_mask.expand(
 					-1,
@@ -241,8 +236,9 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 			Shape: [m][batch, z_dim]
 		log_precisions : list of torch.Tensor
 			Shape: [m][batch, z_dim]
-		nan_mask : torch.Tensor or list of torch.Tensor
+		nan_mask : torch.Tensor
 			Indicates where data is missing.
+			Shape: [b,m]
 
 		Returns
 		-------
@@ -261,7 +257,6 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 		"""
 		if isinstance(means, (tuple,list)):
 			thetas = torch.stack(thetas, dim=1)
-			nan_mask = torch.stack(nan_mask, dim=1)
 			means = torch.stack(means, dim=1) # [b,m,z]
 			log_precisions = torch.stack(log_precisions, dim=1) # [b,m,z]
 		precisions = log_precisions.exp() # [b,m,z]

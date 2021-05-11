@@ -82,12 +82,12 @@ for epoch in range(100):
    `--variational-strategy=gaussian_poe`
    `--variational-posterior=diag_gaussian`
    `--prior=standard_gaussian`
-   `--objective=wu_goodman_elbo`
+   `--objective=mvae_elbo`
 * [MMVAE](https://arxiv.org/abs/1911.03393)
    `--variational-strategy=gaussian_moe`
    `--variational-posterior=diag_gaussian_mixture`
    `--prior=standard_gaussian`
-   `--objective=mmvae_quadratic`
+   `--objective=mmvae_elbo`
 * [s-VAE](https://arxiv.org/abs/1804.00891) (single modality)
    `--variational-strategy=vmf_poe`
    `--variational-posterior=vmf_product`
@@ -120,9 +120,9 @@ existing training framework, you will also have to modify `DATASET_MAP` and
 
 
 #### See also:
-* [MVAE repo](https://github.com/mhw32/multimodal-vae-public), uses a mixture of
+* [MVAE repo](https://github.com/mhw32/multimodal-vae-public), uses a product of
   experts strategy for combining evidence across modalities.
-* [MMVAE repo](https://github.com/iffsid/mmvae), uses a product of experts
+* [MMVAE repo](https://github.com/iffsid/mmvae), uses a mixture of experts
   strategy for combining evidence across modalities.
 * [Hyperspherical VAE Repo](https://github.com/nicola-decao/s-vae-pytorch), a
   VAE with a latent space defined on an n-sphere with von

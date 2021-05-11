@@ -139,8 +139,7 @@ def estimate_marginal_log_like(objective, loader, k=2000, mini_k=128, \
 					inner_batch_res.append(log_l)
 				except RuntimeError: # CUDA out of memory
 					if mini_k == 1:
-						print("MLL failed, probably due to memory issues!")
-						quit()
+						quit("MLL failed, probably due to memory issues!")
 					mini_k //= 2
 			log_m = torch.cat(inner_batch_res, dim=1) - np.log(k)
 			log_m = torch.logsumexp(log_m, dim=1)
@@ -235,7 +234,9 @@ def main(
 	lr : float, optional
 		Learning rate.
 	K : int, optional
-		Number of samples for the IWAE objective. NOTE: change the name of this!
+		Number of samples for the IWAE objective. For the Mvae objective, this
+		is the number of random subsets of observed modalities drawn.
+		TO DO: change the name of this!
 	ebm_samples : int, optional
 		Number of samples for the self-normalized importance sampling (SNIS)
 		strategy for the energy-based model (EBM) variational posterior.
