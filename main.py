@@ -17,7 +17,7 @@ import torch
 
 from src.misc import LOGGING_DIR, ARGS_FN, LOG_FN, STATE_FN, AGG_FN, INDENT
 from src.utils import Logger, make_dataloaders, check_args, make_objective, \
-		hash_json_str, generate, reconstruct
+		hash_json_str
 
 
 
@@ -76,7 +76,7 @@ def test_epoch(objective, loader, epoch, agg):
 	print('====> Epoch: {:03d} Test loss: {:.4f}'.format(epoch, agg['test_loss'][-1]))
 
 
-def save_state(objective, optimizer, epoch):
+def save_state(objective, optimizer, epoch, state_fn):
 	"""Save state."""
 	print("Saving state to:", state_fn)
 	torch.save({
@@ -86,7 +86,7 @@ def save_state(objective, optimizer, epoch):
 		}, state_fn)
 
 
-def load_state(objective, optimizer, device):
+def load_state(objective, optimizer, device, state_fn):
 	"""Load state."""
 	print("Loading state from:", state_fn)
 	checkpoint = torch.load(state_fn, map_location=device)
@@ -202,6 +202,7 @@ def main(
 		train_m=0.5,
 		test_m=0.0,
 		data_dir='/media/jackg/Jacks_Animal_Sounds/torchvision/',
+		save_model=False,
 ):
 	"""
 	Main function: train a model.
@@ -278,6 +279,8 @@ def main(
 		Test set missingness.
 	data_dir : str, optional
 		Data directory.
+	save_model : bool, optional
+		Whether to save the model after the training run.
 	"""
 	# Check the arguments.
 	args = locals()
@@ -336,18 +339,18 @@ def main(
 	optimizer = torch.optim.Adam(objective.parameters(), lr=lr)
 	# Load pretrained models.
 	if pre_trained:
-		prev_epochs = load_state(objective, optimizer, device)
+		prev_epochs = load_state(objective, optimizer, device, state_fn)
 	else:
 		prev_epochs = 0
 	# Set up a data aggregrator.
 	if agg is None:
 		agg = defaultdict(list)
 	# Enter a train loop.
-	for epoch in range(prev_epochs+1, prev_epochs+epochs+ 1):
+	for epoch in range(prev_epochs+1, prev_epochs+epochs+1):
 		train_epoch(objective, dataloaders['train'], optimizer, epoch, agg)
 		if epoch % test_freq == 0:
 			test_epoch(objective, dataloaders['test'], epoch, agg)
-		if epoch % mll_freq == 0 or epoch == prev_epochs + epochs:
+		if epoch % mll_freq == 0: #  or epoch == prev_epochs + epochs
 			mll_helper(objective, dataloaders, epoch, agg)
 	epoch = prev_epochs + epochs
 	# Save the aggregrator.
@@ -355,7 +358,8 @@ def main(
 	# Plot reconstructions and generations.
 	dataloaders['train'].dataset.make_plots(objective, dataloaders, exp_dir)
 	# Save the model/objective.
-	save_state(objective, optimizer, epoch)
+	if save_model:
+		save_state(objective, optimizer, epoch, state_fn)
 
 
 

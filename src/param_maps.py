@@ -12,13 +12,6 @@ DATASET_MAP = {
 }
 
 
-# Models
-from .mnist_halves_model import get_vae as mnist_halves_get_vae
-MODEL_MAP = {
-	'mnist_halves': mnist_halves_get_vae,
-}
-
-
 # Variational strategies
 from .variational_strategies import GaussianPoeStrategy, GaussianMoeStrategy, \
 		VmfPoeStrategy, LocScaleEbmStrategy
@@ -66,6 +59,13 @@ OBJECTIVE_MAP = {
 	'dreg_iwae': DregIwaeElbo,
 	'mmvae_quadratic': MmvaeQuadraticElbo,
 	'wu_goodman_elbo': None,
+}
+
+
+# Models
+from .mnist_halves_model import get_vae as mnist_halves_get_vae
+MODEL_MAP = {
+	'mnist_halves': mnist_halves_get_vae,
 }
 
 

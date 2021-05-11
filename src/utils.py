@@ -4,7 +4,7 @@ Useful functions and classes.
 TO DO
 -----
 * detect hash collisions!
-* Remove get_nan_mask
+* update check_args
 
 Contains
 --------
@@ -13,9 +13,6 @@ Contains
 * make_objective: function
 * check_args: function
 * hash_json_str: function
-* generate: function
-* reconstruct: function
-* get_nan_mask: function
 
 """
 __date__ = "January - May 2021"
@@ -40,6 +37,7 @@ IGNORED_KEYS = [
 		'mll_freq',
 		'test_freq',
 		'no_cuda',
+		'save_model',
 ]
 
 
@@ -174,7 +172,7 @@ def check_args(
 
 	Parameters
 	----------
-	TO DO: finish this
+	TO DO: update this
 	"""
 	# Make sure we recognize the inputs.
 	assert variational_strategy in VAR_STRATEGY_MAP.keys(), \
@@ -195,8 +193,8 @@ def check_args(
 	if variational_strategy == 'vmf_poe':
 		z_dim = vmf_dim * n_vmfs
 		assert z_dim == latent_dim, \
-				"When using vMF distributions, latent_dim should be " + \
-				"vmf_dim * n_vmfs."
+				"When using vMF distributions, latent_dim should be " \
+				+ "vmf_dim * n_vmfs."
 		assert variational_posterior == 'vmf_product', \
 				"Only the variational posterior 'vmf_product' can be used with"\
 				+ " the variational strategy 'vmf_poe'."
@@ -205,17 +203,17 @@ def check_args(
 				+ " variational strategy 'vmf_poe'."
 	elif variational_strategy == 'gaussian_poe':
 		assert variational_posterior == 'diag_gaussian', \
-				"When using a Gaussian product of experts, the variational " + \
-				"posterior must be diagonal Gaussian."
+				"When using a Gaussian product of experts, the variational " \
+				+ "posterior must be diagonal Gaussian."
 	elif variational_strategy == 'gaussian_moe':
 		raise NotImplementedError
 	elif variational_strategy == 'loc_scale_ebm':
 		assert variational_posterior == 'loc_scale_ebm', \
-				"Only the variational posterior 'loc_scale_ebm' can be used" + \
-				" with the variational_strategy 'loc_scale_ebm'."
+				"Only the variational posterior 'loc_scale_ebm' can be used" \
+				+ " with the variational_strategy 'loc_scale_ebm'."
 		assert objective in ['iwae', 'dreg_iwae'], \
-				"Only the IWAE or DReG IWAE objectives can be used with a " + \
-				"Location/Scale EBM variational strategy."
+				"Only the IWAE or DReG IWAE objectives can be used with a " \
+				+ "Location/Scale EBM variational strategy."
 
 
 def hash_json_str(json_str):
@@ -225,72 +223,6 @@ def hash_json_str(json_str):
 	json_str = '\n'.join(json_str)
 	exp_dir = str(adler32(str.encode(json_str))).zfill(DIR_LEN)[-DIR_LEN:]
 	return exp_dir
-
-
-def generate(vae, n_samples=9, decoder_noise=False):
-	"""
-	Generate data with a VAE.
-
-	Parameters
-	----------
-	vae :
-	n_samples : int
-	decoder_noise : bool
-
-	Returns
-	-------
-	generated : numpy.ndarray
-	"""
-	vae.eval()
-	with torch.no_grad():
-		z_samples = vae.prior.rsample(n_samples=n_samples) # [1,n,z]
-		like_params = vae.decoder(z_samples) # [m][param_num][1,n,z]
-		if decoder_noise:
-			assert hasattr(vae.likelihood, 'rsample')
-			generated = vae.likelihood.rsample(like_params, n_samples=n_samples)
-		else:
-			assert hasattr(vae.likelihood, 'mean')
-			generated = vae.likelihood.mean(like_params, n_samples=n_samples)
-	return np.array([g.detach().cpu().numpy() for g in generated])
-
-
-def reconstruct(vae, data, decoder_noise=False):
-	"""
-	Reconstruct data with a VAE.
-
-	Parameters
-	----------
-
-	Returns
-	-------
-
-	"""
-	vae.eval()
-	with torch.no_grad():
-		nan_mask = get_nan_mask(data)
-		for i in range(len(data)):
-			data[i][nan_mask[i]] = 0.0
-		var_dist_params = vae.encoder(data)
-		var_post_params = vae.variational_strategy(*var_dist_params, \
-				nan_mask=nan_mask)
-		z_samples, _ = vae.variational_posterior(*var_post_params, \
-				transpose=False)
-		like_params = vae.decoder(z_samples)
-		if decoder_noise:
-			assert hasattr(vae.likelihood, 'rsample')
-			generated = vae.likelihood.rsample(like_params, n_samples=1)
-		else:
-			assert hasattr(vae.likelihood, 'mean')
-			generated = vae.likelihood.mean(like_params, n_samples=1)
-	return np.array([g.detach().cpu().numpy() for g in generated])
-
-
-def get_nan_mask(xs):
-	"""Return a mask indicating which minibatch items are NaNs."""
-	if type(xs) == type([]):
-		return [torch.isnan(x[:,0]) for x in xs]
-	else:
-		return torch.isnan(xs[:,:,0]) # [b,m]
 
 
 

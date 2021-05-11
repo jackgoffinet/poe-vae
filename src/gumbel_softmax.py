@@ -20,8 +20,8 @@ def gumbel_softmax(logits, temperature=1.0, hard=True):
 	----------
 	logits : torch.Tensor
 		Shape: [*,categories]
-	temperature : float
-	hard : bool
+	temperature : float, optional
+	hard : bool, optional
 		If `hard`, the sample is pushed to a corner of the simplex, but
 		gradients are passed as if the sample were still in the simplex. This
 		is called the "Straight Through" Gumbel estimator in Jang, Gu, and Poole

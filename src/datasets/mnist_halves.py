@@ -25,7 +25,10 @@ class MnistHalvesDataset(Dataset):
 
 	def __init__(self, device, missingness=0.5, data_dir='data/', train=True):
 		"""
-		MNIST data with the top and bottom halves treated as two modalities.
+		Binary MNIST data with image halves treated as two modalities.
+
+		The bottom half is missing at a rate given by the `missingness`
+		parameter. The top half is always observed.
 
 		Parameters
 		----------
@@ -38,8 +41,8 @@ class MnistHalvesDataset(Dataset):
 		data = dataset.data.view(-1,784)
 		self.view_1 = torch.zeros(data.shape[0], 392, dtype=torch.uint8)
 		self.view_2 = torch.zeros(data.shape[0], 392, dtype=torch.uint8)
-		self.view_1[data[:,:392] > 127] = 0
-		self.view_2[data[:,392:] > 127] = 0
+		self.view_1[data[:,:392] > 127] = 1
+		self.view_2[data[:,392:] > 127] = 1
 		self.view_1 = self.view_1.to(device=device, dtype=torch.float32)
 		self.view_2 = self.view_2.to(device=device, dtype=torch.float32)
 		if missingness > 0.0:
@@ -61,7 +64,7 @@ class MnistHalvesDataset(Dataset):
 		train_reconstruct_fn = os.path.join(exp_dir, TRAIN_RECONSTRUCT_FN)
 		test_reconstruct_fn = os.path.join(exp_dir, TEST_RECONSTRUCT_FN)
 		# Plot generated data.
-		generated_data = objective.generate(n_samples=5) # [m,b,s,x]
+		generated_data = objective.generate(n_samples=5, likelihood_noise=True) # [m,1,s,m_dim]
 		self.plot(generated_data, generate_fn)
 		# Plot train reconstructions.
 		for batch in loaders['train']:
@@ -90,13 +93,14 @@ class MnistHalvesDataset(Dataset):
 		"""
 		MnistHalves plotting
 
-		data : numpy.ndarray
-			Shape: [m,b,samples,x_dim]
+		data : numpy.ndarray or tuple of numpy.ndarray
+			Shape: [m,b,samples,x_dim] or [n_cols][m,b,samples,x_dim]
 		fn : str
 		"""
-		if type(data) != type([]):
+		if not isinstance(data, (list,tuple)):
 			data = [data]
 		data_cols = []
+		# For each column...
 		for data_col in data:
 			m, b, s, x_dim = data_col.shape
 			assert m == 2 and x_dim == 392, str(data_col.shape)
@@ -110,89 +114,6 @@ class MnistHalvesDataset(Dataset):
 		plt.axis('off')
 		plt.savefig(fn)
 		plt.close('all')
-
-
-def generate(vae, n_samples=9, decoder_noise=False):
-	"""
-	Generate data with a VAE.
-
-	Parameters
-	----------
-	vae :
-	n_samples : int
-	decoder_noise : bool
-
-	Returns
-	-------
-	generated : numpy.ndarray
-	"""
-	vae.eval()
-	with torch.no_grad():
-		z_samples = vae.prior.rsample(n_samples=n_samples) # [1,n,z]
-		like_params = vae.decoder(z_samples) # [param_num][m][1,n,x]
-		if decoder_noise:
-			assert hasattr(vae.likelihood, 'rsample'), \
-					f"type {type(vae.likelihood)} has no rsample attribute!"
-			generated = vae.likelihood.rsample(like_params, n_samples=n_samples)
-		else:
-			assert hasattr(vae.likelihood, 'mean'), \
-					f"type {type(vae.likelihood)} has no mean attribute!"
-			generated = vae.likelihood.mean(like_params)
-	generated = torch.cat(generated, dim=)
-	return np.array([g.detach().cpu().numpy() for g in generated])
-
-
-def reconstruct(vae, x, decoder_noise=False):
-	"""
-	Reconstruct data with a VAE.
-
-	Parameters
-	----------
-	vae : torch.nn.ModuleDict
-	x : ...
-	decoder_noise : bool, optional
-
-	Returns
-	-------
-	reconstruction : numpy.ndarray
-		Shape: ???
-	"""
-	vae.eval()
-	with torch.no_grad():
-		nan_mask = get_nan_mask(x)
-		if isinstance(x, (tuple, list)): # not vectorized, shape: [m][batch]
-			for i in range(len(x)):
-				x[i][nan_mask[i]] = 0.0
-		else: # vectorized modalities, shape: [batch,m]
-			x[nan_mask.unsqueeze(-1)] = 0.0
-		# Encode data.
-		var_dist_params = vae.encoder(x) # [n_params][b,m,param_dim]
-		# Combine evidence.
-		var_post_params = vae.variational_strategy(*var_dist_params, \
-				nan_mask=nan_mask)
-		# Make a variational posterior and sample.
-		z_samples, _ = vae.variational_posterior(*var_post_params)
-		like_params = vae.decoder(z_samples)
-		if decoder_noise:
-			assert hasattr(vae.likelihood, 'rsample'), \
-					f"type {type(vae.likelihood)} has no rsample attribute!"
-			generated = vae.likelihood.rsample(like_params, n_samples=1)
-		else:
-			assert hasattr(vae.likelihood, 'mean'), \
-					f"type {type(vae.likelihood)} has no mean attribute!"
-			generated = vae.likelihood.mean(like_params)
-	if type(x) == type([]):
-		return np.array([g.detach().cpu().numpy() for g in generated])
-	return generated.detach().cpu().numpy()
-
-
-
-def get_nan_mask(xs):
-	"""Return a mask indicating which minibatch items are NaNs."""
-	if isinstance(xs, (tuple, list)):
-		return [torch.isnan(x[:,0]) for x in xs]
-	else:
-		return torch.isnan(xs[:,:,0]) # [b,m]
 
 
 
