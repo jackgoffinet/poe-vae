@@ -1,6 +1,6 @@
 # PoE VAE
 
-## product of experts variational autoencoders for multimodal data
+## Product of experts variational autoencoders for multimodal data
 
 This repo contains code for quickly and easily implementing multimodal
 variational autoencoders (VAEs).
@@ -52,7 +52,7 @@ vae = nn.ModuleDict({
     nn.ReLU(),
     SplitLinearLayer(200, (m_dim,m_dim)),
     GatherLayer(),
-	),
+  ),
   'likelihood': GroupedLikelihood(
     BernoulliLikelihood(),
     BernoulliLikelihood(),
@@ -78,14 +78,31 @@ for epoch in range(100):
 ```
 
 ### Methods Implemented
-* [MVAE](https://arxiv.org/abs/1802.05335):
-   `--variational-strategy=gaussian_poe --variational-posterior=diag_gaussian --prior=standard_gaussian --objective=wu_goodman_elbo`
+* [MVAE](https://arxiv.org/abs/1802.05335)
+   `--variational-strategy=gaussian_poe`
+   `--variational-posterior=diag_gaussian`
+   `--prior=standard_gaussian`
+   `--objective=wu_goodman_elbo`
 * [MMVAE](https://arxiv.org/abs/1911.03393)
-   `--variational-strategy=gaussian_moe --variational-posterior=diag_gaussian_mixture --prior=standard_gaussian --objective=mmvae_quadratic`
-* [s-VAE](http://arxiv.org/abs/1804.00891) (single-modality)
-   `--variational-strategy=vmf_poe --variational-posterior=vmf_product --prior=uniform_hyperspherical --objective=elbo`
-* [MIWAE](https://arxiv.org/abs/1812.02633) ...
+   `--variational-strategy=gaussian_moe`
+   `--variational-posterior=diag_gaussian_mixture`
+   `--prior=standard_gaussian`
+   `--objective=mmvae_quadratic`
+* [s-VAE](https://arxiv.org/abs/1804.00891) (single modality)
+   `--variational-strategy=vmf_poe`
+   `--variational-posterior=vmf_product`
+   `--prior=uniform_hyperspherical`
+   `--objective=elbo`
+* [MIWAE](https://arxiv.org/abs/1812.02633)
+   `--variational-strategy=unstructured`
+   `--variational-posterior=diag_gaussian`
+   `--prior=standard_gaussian`
+   `--objective=elbo`
 * [partial VAE](https://arxiv.org/abs/1809.11142) TO DO
+   `--variational-strategy=permutation_invariant`
+   `--variational-posterior=diag_gaussian`
+   `--prior=standard_gaussian`
+   `--objective=elbo`
 * [VAEVAE](https://arxiv.org/abs/1912.05075)?
 * [MoPoE VAE](https://arxiv.org/abs/2105.02470)?
 
@@ -124,3 +141,4 @@ existing training framework, you will also have to modify `DATASET_MAP` and
 22. partial-VAE implementation
 23. Clean up the dataset/model correspondence
 24. Test generate/reconstruct
+25. Add a documentation markdown file
