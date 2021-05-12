@@ -373,8 +373,7 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 			Modality-specific precision. Shape: [b,m,z_dim]
 		nan_mask : torch.Tensor
 			Shape: [b,m]
-		n_samples : int
-		transpose : bool
+		n_samples : int, optional
 
 		Returns
 		-------

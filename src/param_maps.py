@@ -6,9 +6,10 @@ __date__ = "January - May 2021"
 
 
 # Datasets
-from .datasets import MnistHalvesDataset
+from .datasets import MnistHalvesDataset, MnistPixelsDataset
 DATASET_MAP = {
 	'mnist_halves': MnistHalvesDataset,
+	'mnist_pixels': MnistPixelsDataset
 }
 
 
@@ -65,8 +66,10 @@ OBJECTIVE_MAP = {
 
 # Models
 from .mnist_halves_model import get_vae as mnist_halves_get_vae
+from .mnist_pixels_model import get_vae as mnist_pixels_get_vae
 MODEL_MAP = {
 	'mnist_halves': mnist_halves_get_vae,
+	'mnist_pixels': mnist_pixels_get_vae,
 }
 
 

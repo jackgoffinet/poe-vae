@@ -13,9 +13,6 @@ import os
 import torch
 from torch.utils.data import Dataset
 
-# from .encoders_decoders import MLP, SplitLinearLayer, EncoderModalityEmbedding,\
-# 		DecoderModalityEmbedding
-
 
 
 GENERATE_FN = 'generations.pdf'
@@ -25,7 +22,7 @@ TEST_RECONSTRUCT_FN = 'test_reconstructions.pdf'
 
 
 @contextlib.contextmanager
-def temp_seed(seed):
+def local_seed(seed):
 	"""https://stackoverflow.com/questions/49555991/"""
 	state = np.random.get_state()
 	np.random.seed(seed)
@@ -183,82 +180,6 @@ class MnistMcarDataset(Dataset):
 
 
 
-def generate(vae, n_samples=9, decoder_noise=False):
-	"""
-	Generate data with a VAE.
-
-	Parameters
-	----------
-	vae :
-	n_samples : int
-	decoder_noise : bool
-
-	Returns
-	-------
-	generated : numpy.ndarray
-	"""
-	vae.eval()
-	with torch.no_grad():
-		z_samples = vae.prior.rsample(n_samples=n_samples) # [1,n,z]
-		like_params = vae.decoder(z_samples) # [param_num][m][1,n,x]
-		if decoder_noise:
-			assert hasattr(vae.likelihood, 'rsample'), \
-					f"type {type(vae.likelihood)} has no rsample attribute!"
-			generated = vae.likelihood.rsample(like_params, n_samples=n_samples)
-		else:
-			assert hasattr(vae.likelihood, 'mean'), \
-					f"type {type(vae.likelihood)} has no mean attribute!"
-			generated = vae.likelihood.mean(like_params, n_samples=n_samples)
-	return np.array([g.detach().cpu().numpy() for g in generated])
-
-
-def reconstruct(vae, x, decoder_noise=False):
-	"""
-	Reconstruct data with a VAE.
-
-	Parameters
-	----------
-
-	Returns
-	-------
-
-	"""
-	vae.eval()
-	with torch.no_grad():
-		nan_mask = get_nan_mask(x)
-		if isinstance(x, (tuple, list)): # not vectorized, shape: [m][batch]
-			for i in range(len(x)):
-				x[i][nan_mask[i]] = 0.0
-		else: # vectorized modalities, shape: [batch,m]
-			x[nan_mask.unsqueeze(-1)] = 0.0
-		# Encode data.
-		var_dist_params = vae.encoder(x) # [n_params][b,m,param_dim]
-		# Combine evidence.
-		var_post_params = vae.variational_strategy(*var_dist_params, \
-				nan_mask=nan_mask)
-		# Make a variational posterior and sample.
-		z_samples, _ = vae.variational_posterior(*var_post_params)
-		like_params = vae.decoder(z_samples)
-		if decoder_noise:
-			assert hasattr(vae.likelihood, 'rsample'), \
-					f"type {type(vae.likelihood)} has no rsample attribute!"
-			generated = vae.likelihood.rsample(like_params, n_samples=1)
-		else:
-			assert hasattr(vae.likelihood, 'mean'), \
-					f"type {type(vae.likelihood)} has no mean attribute!"
-			generated = vae.likelihood.mean(like_params, n_samples=1)
-	if isinstance(x, (tuple, list)):
-		return np.array([g.detach().cpu().numpy() for g in generated])
-	return generated.detach().cpu().numpy()
-
-
-
-def get_nan_mask(xs):
-	"""Return a mask indicating which minibatch items are NaNs."""
-	if type(xs) == type([]):
-		return [torch.isnan(x[:,0]) for x in xs]
-	else:
-		return torch.isnan(xs[:,:,0]) # [b,m]
 
 
 

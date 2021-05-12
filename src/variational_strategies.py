@@ -223,19 +223,25 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 
 	def forward(self, thetas, means, log_precisions, nan_mask=None):
 		"""
-		Multiply the Gaussian proposals. The other EBM parameters, the thetas,
+		Multiply the Gaussian proposals.
+
+		The other EBM parameters, the thetas,
 		are simply passed. The NaN mask is also passed.
 
 		Parameters
 		----------
-		thetas: list of torch.Tensor
+		thetas: torch.Tensor or tuple of torch.Tensor
 			Shape:
-				??? if vectorized
+				[b,m,theta_dim] if vectorized
 				[m][b,theta_dim] otherwise
-		means : list of torch.Tensor
-			Shape: [m][batch, z_dim]
-		log_precisions : list of torch.Tensor
-			Shape: [m][batch, z_dim]
+		means : torch.Tensor or tuple of torch.Tensor
+			Shape:
+				[batch,m,z_dim] if vectorized
+				[m][batch,z_dim] otherwise
+		log_precisions : torch.Tensor or tuple of torch.Tensor
+			Shape:
+				[batch,m,z_dim] if vectorized
+				[m][batch,z_dim] otherwise
 		nan_mask : torch.Tensor
 			Indicates where data is missing.
 			Shape: [b,m]
@@ -243,15 +249,15 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 		Returns
 		-------
 		thetas : torch.Tensor
-			Shape: [batch, m, theta_dim]
+			Shape: [b,m,theta_dim]
 		mean : torch.Tensor
-			Shape: [batch, z_dim]
+			Shape: [b,z_dim]
 		precision : torch.Tensor
-			Shape: [batch, z_dim]
+			Shape: [b,z_dim]
 		means : torch.Tensor
-			Shape: [batch, m, z_dim]
+			Shape: [b,m,z_dim]
 		precisions : torch.Tensor
-			Shape: [batch, m, z_dim]
+			Shape: [b,m,z_dim]
 		nan_mask : torch.Tensor
 			Shape : [b,m]
 		"""

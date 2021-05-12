@@ -43,8 +43,10 @@ class VaeObjective(torch.nn.Module):
 
 		Parameters
 		----------
-		x : torch.Tensor or list of torch.Tensor
-			Shape: [m][b,x] or ???
+		xs : torch.Tensor or tuple of torch.Tensor
+			Shape:
+				[batch,modalities,m_dim] if vectorized
+				[modalities][batch,m_dim] otherwise
 
 		Returns
 		-------
@@ -60,7 +62,7 @@ class VaeObjective(torch.nn.Module):
 
 		Parameters
 		----------
-		xs : list of torch.Tensor or torch.Tensor
+		xs : torch.Tensor or tuple of torch.Tensor
 			Shape:
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
@@ -89,8 +91,7 @@ class VaeObjective(torch.nn.Module):
 
 	def _encode_helper(self, encoding, nan_mask, n_samples=1):
 		# Combine evidence.
-		# `var_post_params` shape: [n_params][b,*] where * is parameter dim.s.
-		# ??? is vectorized
+		# var_post_params shape: [n_params][b,*] where * is parameter dim.s.
 		var_post_params = self.variational_strategy(
 				*encoding,
 				nan_mask=nan_mask,
@@ -122,7 +123,7 @@ class VaeObjective(torch.nn.Module):
 		----------
 		z_samples : torch.Tensor
 			Shape: [batch,n_samples,z_dim]
-		xs : list of torch.Tensor or torch.Tensor
+		xs : torch.Tensor or tuple of torch.Tensor
 			Shape:
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
@@ -135,13 +136,16 @@ class VaeObjective(torch.nn.Module):
 			Shape: [batch,samples]
 		"""
 		# Decode samples to get likelihood parameters.
-		# `likelihood_params` shape:
-		# [n_params][b,m,m_dim] if vectorized
-		# [n_params][m][b,s,x] otherwise
-		likelihood_params = self.decoder(z_samples)
+		# like_params shape:
+		# [n_params][b,s,m,m_dim] if vectorized
+		# [n_params][m][b,s,m',m_dim] otherwise
+		like_params = self.decoder(z_samples)
 		# Evaluate likelihoods, sum over modalities.
-		log_likes = self.likelihood(xs, likelihood_params, \
-				nan_mask=nan_mask) # [b,s,m]
+		log_likes = self.likelihood(
+				xs,
+				like_params,
+				nan_mask=nan_mask,
+		) # [b,s,m]
 		log_likes = torch.sum(log_likes, dim=2) # [b,s]
 		return log_likes
 
@@ -152,7 +156,10 @@ class VaeObjective(torch.nn.Module):
 
 		Parameters
 		----------
-		xs : list of torch.Tensor
+		xs : torch.Tensor or tuple of torch.Tensor
+			Shape:
+				[batch,modalities,m_dim] if vectorized
+				[modalities][batch,m_dim] otherwise
 		n_samples : int
 			Number of importance-weighted samples.
 		keepdim : bool
@@ -193,7 +200,8 @@ class VaeObjective(torch.nn.Module):
 
 		Returns
 		-------
-		generated : numpy.ndarray
+		generated : list of numpy.ndarray
+			Shape: [m][1,s,sub_modalities,m_dim]
 		"""
 		self.eval()
 		with torch.no_grad():
@@ -206,7 +214,7 @@ class VaeObjective(torch.nn.Module):
 				generated = self.likelihood.sample(like_params)
 			else:
 				generated = self.likelihood.mean(like_params)
-		return np.array([g.detach().cpu().numpy() for g in generated])
+		return [g.detach().cpu().numpy() for g in generated]
 
 
 	def reconstruct(self, xs, likelihood_noise=False):
@@ -215,32 +223,32 @@ class VaeObjective(torch.nn.Module):
 
 		Parameters
 		----------
-		xs : ...
+		xs : torch.Tensor or tuple of torch.Tensor
+			Shape:
+				[batch,modalities,m_dim] if vectorized
+				[modalities][batch,m_dim] otherwise
 		likelihood_noise : bool, optional
 
 		Returns
 		-------
-		reconstruction : numpy.ndarray
-			Shape: ???
+		reconstruction : list of numpy.ndarray
+			Shape: [m][b,s,sub_modalities,m_dim]
 		"""
 		self.eval()
 		with torch.no_grad():
 			xs, nan_mask = apply_nan_mask(xs)
 			# Encode data.
-			var_dist_params = self.encoder(xs) # [n_params][b,m,param_dim]
-			# Combine evidence.
-			var_post_params = self.variational_strategy(*var_dist_params, \
-					nan_mask=nan_mask)
-			# Make a variational posterior and sample.
-			z_samples, _ = self.variational_posterior(*var_post_params)
-			like_params =self.decoder(z_samples)
+			z_samples, _, _ = self.encode(xs, nan_mask) # [b,s,z]
+			# like_params shape:
+			# [n_params][1,m,m_dim] if vectorized
+			# [n_params][m][1,s,x] otherwise
+			like_params = self.decoder(z_samples)
+			# generated shape: [m][b,s,sub_m,m_dim]
 			if likelihood_noise:
 				generated = self.likelihood.sample(like_params)
 			else:
 				generated = self.likelihood.mean(like_params)
-		if isinstance(xs, (tuple, list)):
-			return np.array([g.detach().cpu().numpy() for g in generated])
-		return generated.detach().cpu().numpy()
+		return [g.detach().cpu().numpy() for g in generated]
 
 
 
@@ -262,7 +270,7 @@ class StandardElbo(VaeObjective):
 
 		Parameters
 		----------
-		xs : list of torch.Tensor or torch.Tensor
+		xs : torch.Tensor or tuple of torch.Tensor
 			Shape:
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
@@ -308,7 +316,7 @@ class IwaeElbo(VaeObjective):
 
 		Parameters
 		----------
-		xs : list of torch.Tensor or torch.Tensor
+		xs : torch.Tensor or tuple of torch.Tensor
 			Shape:
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
@@ -352,7 +360,10 @@ class DregIwaeElbo(VaeObjective):
 
 		Parameters
 		----------
-		xs : torch.Tensor
+		xs : torch.Tensor or tuple of torch.Tensor
+			Shape:
+				[batch,modalities,m_dim] if vectorized
+				[modalities][batch,m_dim] otherwise
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		xs, nan_mask = apply_nan_mask(xs)
@@ -405,7 +416,10 @@ class MmvaeElbo(VaeObjective):
 
 		Parameters
 		----------
-		xs : torch.Tensor
+		xs : torch.Tensor or tuple of torch.Tensor
+			Shape:
+				[batch,modalities,m_dim] if vectorized
+				[modalities][batch,m_dim] otherwise
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		xs, nan_mask = apply_nan_mask(xs)
@@ -470,7 +484,7 @@ class MvaeElbo(VaeObjective):
 
 		Parameters
 		----------
-		xs : list of torch.Tensor or torch.Tensor
+		xs : torch.Tensor or tuple of torch.Tensor
 			Shape:
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
@@ -540,7 +554,10 @@ class SnisElbo(VaeObjective):
 
 		Parameters
 		----------
-		xs : torch.Tensor
+		xs : torch.Tensor or tuple of torch.Tensor
+			Shape:
+				[batch,modalities,m_dim] if vectorized
+				[modalities][batch,m_dim] otherwise
 		"""
 		raise NotImplementedError
 
@@ -557,7 +574,10 @@ class ArElbo(VaeObjective):
 
 		Parameters
 		----------
-		xs : torch.Tensor
+		xs : torch.Tensor or tuple of torch.Tensor
+			Shape:
+				[batch,modalities,m_dim] if vectorized
+				[modalities][batch,m_dim] otherwise
 		"""
 		raise NotImplementedError
 
@@ -569,7 +589,7 @@ def apply_nan_mask(xs):
 
 	Parameters
 	----------
-	xs : torch.Tensor or tuple of torch.Tensors
+	xs : torch.Tensor or tuple of torch.Tensor
 		Shape:
 			[batch,modalities,m_dim] if vectorized
 			[modalities][batch,m_dim] otherwise

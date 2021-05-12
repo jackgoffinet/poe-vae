@@ -8,7 +8,8 @@ __date__ = "May 2021"
 import torch
 import torch.nn as nn
 
-from .encoders_decoders import SplitLinearLayer, NetworkList, GatherLayer
+from .encoders_decoders import SplitLinearLayer, NetworkList, GatherLayer, \
+		UnsqueezeLayer
 from .likelihoods import GroupedLikelihood
 from .param_maps import LIKELIHOOD_MAP
 
@@ -95,7 +96,6 @@ def make_single_encoder(variational_strategy='gaussian_poe', latent_dim=20,
 		raise NotImplementedError(err_str)
 
 
-
 def make_decoder(variational_strategy='gaussian_poe', latent_dim=20, \
 	vmf_dim=4, n_vmfs=5, **kwargs):
 	if variational_strategy in ['gaussian_poe', 'loc_scale_ebm']:
@@ -113,6 +113,7 @@ def make_decoder(variational_strategy='gaussian_poe', latent_dim=20, \
 		nn.ReLU(),
 		nn.Linear(500,500),
 		nn.ReLU(),
+		UnsqueezeLayer(dim=-2),
 		SplitLinearLayer(500,(784//2,784//2)),
 		GatherLayer(),
 	)

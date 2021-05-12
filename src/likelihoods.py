@@ -35,7 +35,7 @@ class AbstractLikelihood(torch.nn.Module):
 		like_params : tuple of torch.Tensor or tuple of tuples of torch.Tensor
 			Shape:
 				[1][batch,n_samples,m_dim] if vectorized
-				[1][modalities][batch,n_samples,m_dim] otherwise
+				[1][modalities][batch,n_samples,sub_modalities,m_dim] otherwise
 		nan_mask : torch.Tensor or tuple of torch.Tensor
 			Shape: [batch,modalities]
 
@@ -108,7 +108,7 @@ class GroupedLikelihood(AbstractLikelihood):
 		xs : tuple of torch.Tensor
 			Shape: [modalities][batch,m_dim]
 		like_params : tuple of tuple of torch.Tensor
-			Shape: [n_params][m][b,s,x]
+			Shape: [n_params][m][batch,n_samples,sub_modalities,m_dim]
 		nan_mask : None or torch.Tensor
 			Shape: [batch,modalities]
 
@@ -117,15 +117,17 @@ class GroupedLikelihood(AbstractLikelihood):
 		log_probs : tuple of torch.Tensor
 			Shape: [batch,n_samples,modalities]
 		"""
+		assert isinstance(xs, (tuple,list)), f"{type(xs)} not in (tuple,list)"
+		assert len(xs[0].shape) == 2, f"len({xs[0].shape}) != 2"
 		if nan_mask is None:
 			nan_mask = [None for _ in self.likelihoods]
 		else:
 			nan_mask = [nan_mask[:,i:i+1] for i in range(nan_mask.shape[1])]
-		# Transpose first two dimensions of like_params.
+		# Transpose first two dimensions of like_params: [m][n][b,s,m,m_dim]
 		like_params = tuple(tuple(p) for p in zip(*like_params))
 		# Send each modality to its own likelihood.
 		gen = zip(self.likelihoods, xs, like_params, nan_mask)
-		return torch.cat([like(i,j,k) for like,i,j,k in gen], dim=2)
+		return torch.cat([like(i.unsqueeze(1),j,k) for like,i,j,k in gen],dim=2)
 
 
 	def mean(self, like_params):
@@ -135,7 +137,7 @@ class GroupedLikelihood(AbstractLikelihood):
 		Parameters
 		----------
 		like_params: tuple of torch.tensor
-			Shape: [n_params][modalities][batch,n_samples,m_dim]
+			Shape: [n_params][modalities][batch,n_samples,modalities,m_dim]
 
 		Returns
 		-------
@@ -155,7 +157,7 @@ class GroupedLikelihood(AbstractLikelihood):
 		Parameters
 		----------
 		like_params: tuple of torch.tensor
-			Shape: [n_params][modalities][batch,n_samples,m_dim]
+			Shape: [n_params][modalities][batch,n_samples,modalities,m_dim]
 
 		Returns
 		-------
@@ -195,7 +197,7 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 		xs : torch.Tensor
 			Shape: [batch,modalities,m_dim]
 		like_params : tuple of torch.Tensor
-			Shape: [1][batch,n_samples,m_dim]
+			Shape: [1][batch,n_samples,modalities,m_dim]
 		nan_mask : torch.Tensor
 			Shape: [batch,modalities]
 
@@ -207,16 +209,15 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 		assert len(like_params) == 1, f"SphericalGaussianLikelihood only takes"\
 				+ f" a single parameter. Found {len(like_params)}."
 		# Unwrap the single parameter tuple.
-		like_params = like_params[0] # [b,s,m]
-		if len(like_params.shape) == 3:
-			like_params = like_params.unsqueeze(2) # [b,s,m,m_dim]
-			xs = xs.unsqueeze(1) # [b,m,m_dim]
+		like_params = like_params[0] # [b,s,m,m_dim]
+		assert len(like_params.shape) == 4
+		xs = xs.unsqueeze(1) # [b,1,m,m_dim]
 		# Make a Gaussian distribution.
 		dist = Normal(
 				torch.zeros(1, device=xs.device),
 				self.std_dev*torch.ones(1, device=xs.device),
 		)
-		log_probs = xs.unsqueeze(1) - like_params # [b,s,m,m_dim]
+		log_probs = xs - like_params # [b,s,m,m_dim]
 		log_probs = dist.log_prob(log_probs).sum(dim=3) # [b,s,m]
 		if nan_mask is not None:
 			temp_mask = (~nan_mask).float().unsqueeze(1).expand(log_probs.shape)
@@ -233,12 +234,12 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 		Parameters
 		----------
 		like_params: tuple of torch.tensor
-			Shape: [1][batch,n_samples,m_dim]
+			Shape: [1][batch,n_samples,modalities,m_dim]
 
 		Returns
 		-------
 		mean : tuple of torch.Tensor
-			Shape: [1][batch,n_samples,m_dim]
+			Shape: [1][batch,n_samples,modalities,m_dim]
 		"""
 		assert len(like_params) == 1, f"SphericalGaussianLikelihood only takes"\
 				+ f" a single parameter. Found {len(like_params)}."
@@ -252,7 +253,7 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 		Parameters
 		----------
 		like_params: tuple of torch.tensor
-			Shape: [1][batch,n_samples,m_dim]
+			Shape: [1][batch,n_samples,modalities,m_dim]
 
 		Returns
 		-------
@@ -262,7 +263,7 @@ class SphericalGaussianLikelihood(AbstractLikelihood):
 		assert len(like_params) == 1, f"SphericalGaussianLikelihood only takes"\
 				+ f" a single parameter. Found {len(like_params)}."
 		# Unwrap the single parameter tuple.
-		like_params = like_params[0] # [b,s,m]
+		like_params = like_params[0] # [b,s,m,m_dim]
 		# Make a Gaussian distribution.
 		dist = Normal(
 				like_params,
@@ -292,7 +293,7 @@ class BernoulliLikelihood(AbstractLikelihood):
 		xs : torch.Tensor
 			Shape: [batch,modalities,m_dim]
 		like_params : tuple of torch.Tensor
-			Shape: [1][batch,n_samples,m_dim]
+			Shape: [1][batch,n_samples,modalities,m_dim]
 		nan_mask : torch.Tensor
 			Shape: [batch,modalities]
 
@@ -304,12 +305,11 @@ class BernoulliLikelihood(AbstractLikelihood):
 		assert len(like_params) == 1, f"BernoulliLikelihood only takes" \
 				+ f" a single parameter. Found {len(like_params)}."
 		# Unwrap the single parameter tuple.
-		like_params = like_params[0] # [b,s,m]
-		if len(like_params.shape) == 3:
-			like_params = like_params.unsqueeze(2) # [b,s,m,m_dim]
-			xs = xs.unsqueeze(1) # [b,m,m_dim]
+		like_params = like_params[0] # [b,s,m,m_dim]
+		assert len(like_params.shape) == 4, f"len({like_params.shape}) != 4"
+		xs = xs.unsqueeze(1) # [b,1,m,m_dim]
 		dist = Bernoulli(logits=like_params)
-		log_probs = dist.log_prob(xs.unsqueeze(1)).sum(dim=3) # [b,s,m]
+		log_probs = dist.log_prob(xs).sum(dim=3) # [b,s,m]
 		if nan_mask is not None:
 			temp_mask = (~nan_mask).float().unsqueeze(1).expand(log_probs.shape)
 			assert temp_mask.shape == log_probs.shape, \
@@ -325,7 +325,7 @@ class BernoulliLikelihood(AbstractLikelihood):
 		Parameters
 		----------
 		like_params: tuple of torch.tensor
-			Shape: [1][batch,n_samples,m_dim]
+			Shape: [1][batch,n_samples,modalities,m_dim]
 
 		Returns
 		-------
@@ -344,7 +344,7 @@ class BernoulliLikelihood(AbstractLikelihood):
 		Parameters
 		----------
 		like_params: tuple of torch.tensor
-			Shape: [1][batch,n_samples,m_dim]
+			Shape: [1][batch,n_samples,modalities,m_dim]
 
 		Returns
 		-------
@@ -354,7 +354,7 @@ class BernoulliLikelihood(AbstractLikelihood):
 		assert len(like_params) == 1, f"BernoulliLikelihood only takes" \
 				+ f" a single parameter. Found {len(like_params)}."
 		# Unwrap the single parameter tuple.
-		like_params = like_params[0] # [b,s,m]
+		like_params = like_params[0] # [b,s,m,m_dim]
 		dist = Bernoulli(logits=like_params)
 		samples = dist.sample()
 		return (samples,)

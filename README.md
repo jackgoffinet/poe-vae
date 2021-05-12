@@ -115,7 +115,7 @@ existing training framework, you will also have to modify `DATASET_MAP` and
 
 #### Dependencies
 * [Python3](https://www.python.org/) (3.6+)
-* [PyTorch](https://pytorch.org) (1.1+)
+* [PyTorch](https://pytorch.org) (1.6+)
 * [Python Fire](https://github.com/google/python-fire) (only used in `main.py`)
 
 
@@ -140,5 +140,4 @@ existing training framework, you will also have to modify `DATASET_MAP` and
 21. Compare network architectures w/ other papers
 22. partial-VAE implementation
 23. Clean up the dataset/model correspondence
-24. Test generate/reconstruct
 25. Add a documentation markdown file

@@ -44,41 +44,6 @@ class NetworkList(torch.nn.Module):
 
 
 
-class MLP(torch.nn.Module):
-
-	def __init__(self, dims, activation=torch.nn.ReLU, last_activation=False):
-		"""
-		Simple fully-connected network with activations between layers.
-
-		Parameters
-		----------
-		dims : list of int
-		activation : torch.nn.Module?
-		"""
-		super(MLP, self).__init__()
-		layers = torch.nn.ModuleList()
-		assert len(dims) > 1
-		for i in range(len(dims)-2):
-			layers.append(torch.nn.Linear(dims[i],dims[i+1]))
-			layers.append(activation())
-		layers.append(torch.nn.Linear(dims[-2], dims[-1]))
-		if last_activation:
-			layers.append(activation())
-		self.net = torch.nn.Sequential(*layers)
-
-
-	def forward(self, x):
-		"""
-		Send `x` through the network.
-
-		Parameters
-		----------
-		x : torch.Tensor
-		"""
-		return self.net(x)
-
-
-
 class SplitLinearLayer(torch.nn.Module):
 
 	def __init__(self, in_dim, out_dims):
@@ -118,22 +83,54 @@ class GatherLayer(torch.nn.Module):
 		return (args,)
 
 
+class SqueezeLayer(torch.nn.Module):
+
+	def __init__(self, dim=-1):
+		"""
+		Squeeze the given dimension.
+		"""
+		super(SqueezeLayer, self).__init__()
+		self.dim = dim
+
+	def forward(self, x):
+		return x.squeeze(self.dim)
+
+
+
+class UnsqueezeLayer(torch.nn.Module):
+
+	def __init__(self, dim=-1):
+		"""
+		Unsqueeze the given dimension.
+		"""
+		super(UnsqueezeLayer, self).__init__()
+		self.dim = dim
+
+	def forward(self, x):
+		return x.unsqueeze(self.dim)
+
+
 
 class EncoderModalityEmbedding(torch.nn.Module):
 
 	def __init__(self, n_modalities, embed_dim=8):
 		"""
+		Create a trainable modality representation, concatenate to inputs.
 
-
+		Parameters
+		----------
+		n_modalities : int
+		embed_dim : int, optional
 		"""
 		super(EncoderModalityEmbedding, self).__init__()
-		self.embed = \
-				torch.nn.Parameter(torch.randn(1, n_modalities, embed_dim))
+		self.embed = torch.nn.Parameter(
+				torch.randn(1, n_modalities, embed_dim),
+		)
 
 
 	def forward(self, x):
 		"""
-		Send `x` through the network.
+		Concatenate the modality representation to x.
 
 		Parameters
 		----------
@@ -146,43 +143,49 @@ class EncoderModalityEmbedding(torch.nn.Module):
 			Shape: [batch,modalities,m_dim+embed_dim]
 		"""
 		assert len(x.shape) == 3
-		temp_embed = torch.tanh(self.embed)
-		temp_embed = temp_embed.expand(x.shape[0], -1, -1)
-		x = x.expand(-1, temp_embed.shape[1], -1)
-		return torch.cat([x,temp_embed], dim=2)
+		assert x.shape[1] == self.embed.shape[1]
+		temp_embed = torch.tanh(self.embed) # [1,m,e]
+		temp_embed = temp_embed.expand(x.shape[0], -1, -1) # [b,m,e]
+		return torch.cat([x,temp_embed], dim=2) # [b,m,m_dim+e]
 
 
 class DecoderModalityEmbedding(torch.nn.Module):
 
 	def __init__(self, n_modalities, embed_dim=8):
 		"""
+		Create a trainable modality representation, concatenate to inputs.
 
-
+		Parameters
+		----------
+		n_modalities : int
+		embed_dim : int, optional
 		"""
 		super(DecoderModalityEmbedding, self).__init__()
-		self.embed = \
-				torch.nn.Parameter(torch.randn(1, 1, n_modalities, embed_dim))
+		self.m = n_modalities
+		self.embed = torch.nn.Parameter(
+				torch.randn(1, 1, self.m, embed_dim),
+		)
 
 
 	def forward(self, x):
 		"""
-		Send `x` through the network.
+		Concatenate the modality representation to x.
 
 		Parameters
 		----------
 		x : torch.Tensor
-			Shape: [batch,samples,_] or [batch,samples,modalities,_]
+			Shape: [b,s,z]
 
 		Returns
 		-------
 		x_out : torch.Tensor
 			Shape: [batch,samples,modalities,_+embed_dim]
 		"""
-		if len(x.shape) == 3:
-			x = x.unsqueeze(2).expand(-1,-1,self.embed.shape[2],-1)
-		temp_embed = torch.tanh(self.embed)
-		temp_embed = temp_embed.expand(x.shape[0], x.shape[1], -1, -1)
-		return torch.cat([x,temp_embed], dim=3)
+		assert len(x.shape) == 3
+		x = x.unsqueeze(2).expand(-1,-1,self.m,-1) # [b,s,m,z]
+		temp_embed = torch.tanh(self.embed) # [1,1,m,e]
+		temp_embed = temp_embed.expand(len(x), x.shape[1], -1, -1) # [b,s,m,e]
+		return torch.cat([x,temp_embed], dim=3) # [b,s,m,z+e]
 
 
 if __name__ == '__main__':

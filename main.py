@@ -191,6 +191,7 @@ def main(
 		vmf_dim=4,
 		n_vmfs=5,
 		theta_dim=4,
+		embed_dim=8,
 		obs_std_dev=0.1,
 		pre_trained=False,
 		mll_freq=1000,
@@ -256,7 +257,9 @@ def main(
 		Number of von Mises-Fisher distributions to use to form the latent
 		space.
 	theta_dim : int, optional
-		...
+		For energy-based approximate posteriors.
+	embed_dim : int, optional
+		For learning a modality embedding.
 	obs_std_dev : float, optional
 		Observation standard deviation. For Gaussian likelihoods.
 	pre_trained : bool, optional
@@ -304,16 +307,14 @@ def main(
 			agg = torch.load(agg_fn)
 			print(f"Loaded agg from {agg_fn}")
 		except FileNotFoundError:
-			print(f"Couldn't find {agg_fn} to load")
-			return
+			quit(f"Couldn't find {agg_fn} to load")
 	else:
 		if os.path.exists(exp_dir):
 			_ = input("Experiment path already exists! Continue? ")
 			try:
 				os.remove(log_fn)
 			except FileNotFoundError:
-				print(f"Couldn't find {log_fn} to remove")
-				return
+				quit(f"Couldn't find {log_fn} to remove")
 		else:
 			os.makedirs(exp_dir)
 	# Write the parameters to a JSON file.

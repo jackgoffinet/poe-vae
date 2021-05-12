@@ -34,7 +34,6 @@ class MnistHalvesDataset(Dataset):
 		----------
 		data_fn : str
 		missingness : float
-		digit : tuple of ints
 		"""
 		self.missingness = missingness
 		dataset = datasets.MNIST(data_dir, train=train, download=True)
@@ -64,28 +63,30 @@ class MnistHalvesDataset(Dataset):
 		train_reconstruct_fn = os.path.join(exp_dir, TRAIN_RECONSTRUCT_FN)
 		test_reconstruct_fn = os.path.join(exp_dir, TEST_RECONSTRUCT_FN)
 		# Plot generated data.
-		generated_data = objective.generate(n_samples=5) # [m,1,s,m_dim]
-		self.plot(generated_data, generate_fn)
+		gen_data = objective.generate(n_samples=5) # [2][1,5,1,392]
+		gen_data = np.concatenate(gen_data, axis=2).reshape(1,1,5,784)
+		self.plot(gen_data, generate_fn)
 		# Plot train reconstructions.
 		for batch in loaders['train']:
-			data = [b[:5] for b in batch]
-			recon_data = objective.reconstruct(data) # [m,b,s,x]
-			if len(recon_data.shape) == 5: # stratified sampling
-				recon_data = recon_data[:,:,:,np.random.randint(recon_data.shape[3])]
-			# recon_data = np.swapaxes(recon_data, 0, 1)
+			recon_data = objective.reconstruct(batch) # [m][b,s,m,m_dim]
+			recon_data = np.array(recon_data)[:,:5] # [1,5,1,784,1]
+			recon_data = recon_data.reshape(1,1,5,784)
 			break
-		data = np.array([d.detach().cpu().numpy() for d in data])
-		data = data.reshape(recon_data.shape) # [m,b,s,x]
+		# [2,5,392]
+		data = np.array([d.detach().cpu().numpy() for d in batch[:5]])[:,:5]
+		data = np.concatenate([data[0], data[1]], axis=1)
+		data = data.reshape(recon_data.shape) # [1,1,5,784]
 		self.plot([data,recon_data], train_reconstruct_fn)
 		# Plot test reconstructions.
 		for batch in loaders['test']:
-			data = [b[:5] for b in batch]
-			recon_data = objective.reconstruct(data) # [m,b,s,x]
-			if len(recon_data.shape) == 5: # stratified sampling
-				recon_data = recon_data[:,:,:,np.random.randint(recon_data.shape[3])]
+			recon_data = objective.reconstruct(batch) # [m][b,s,m,m_dim]
+			recon_data = np.array(recon_data)[:,:5] # [1,5,1,784,1]
+			recon_data = recon_data.reshape(1,1,5,784)
 			break
-		data = np.array([d.detach().cpu().numpy() for d in data])
-		data = data.reshape(recon_data.shape) # [m,b,s,x]
+		# [2,5,392]
+		data = np.array([d.detach().cpu().numpy() for d in batch[:5]])[:,:5]
+		data = np.concatenate([data[0], data[1]], axis=1)
+		data = data.reshape(recon_data.shape) # [1,1,5,784]
 		self.plot([data,recon_data], test_reconstruct_fn)
 
 
@@ -103,9 +104,7 @@ class MnistHalvesDataset(Dataset):
 		# For each column...
 		for data_col in data:
 			m, b, s, x_dim = data_col.shape
-			assert m == 2 and x_dim == 392, str(data_col.shape)
-			data_col = data_col.reshape(m,b*s,x_dim)
-			data_col = np.concatenate([data_col[0],data_col[1]], axis=-1)
+			assert (m,b,s,x_dim) == (1,1,5,784), str(data_col.shape)
 			data_col = data_col.reshape(-1,28)
 			data_cols.append(data_col)
 		data = np.concatenate(data_cols, axis=1)
