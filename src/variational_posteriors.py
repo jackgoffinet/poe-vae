@@ -5,6 +5,7 @@ TO DO
 -----
 * LocScaleEbmPosterior assumes a standard Gaussian prior. Generalize this!
 * Implement LocScaleEbmPosterior log_prob, check the other log probs
+* Double check shapes for DiagonalGaussianMixturePosterior
 """
 __date__ = "January - May 2021"
 
@@ -160,7 +161,53 @@ class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
 		"""
 		super(DiagonalGaussianMixturePosterior, self).__init__()
 
+
 	def forward(self, means, precisions, n_samples=1, samples=None):
+		"""
+		Produce reparamaterized samples and evaluate their log probability.
+
+		If `samples` is given, evaluate their log probability. Otherwise, make
+		samples and evaluate their log probability.
+
+		Parameters
+		----------
+		samples : None or torch.Tensor
+			Shape: [b,s,z]
+
+		Returns
+		-------
+		samples : torch.Tensor
+			Shape: [b,s,z]
+		log_prob : torch.Tensor
+			Shape: [b,s]
+		"""
+		std_devs = torch.sqrt(torch.reciprocal(precisions + EPS))
+		means = means.unsqueeze(1) # [b,1,m,z]
+		std_devs = std_devs.unsqueeze(1) # [b,1,m,z]
+		self.dist = Normal(means, std_devs) # [b,1,m,z]
+		if samples is None:
+			samples = self.dist.rsample(sample_shape=(n_samples,)) # [s,b,1,m,z]
+			samples = samples.squeeze(2).transpose(0,1) # [b,s,m,z]
+		else:
+			# [b,s,m,z]
+			samples = samples.unsqueeze(2).expand(-1,-1,means.shape[2],-1)
+		ohc_probs = torch.ones(means.shape[0],means.shape[2], \
+				device=means.device)
+		ohc_dist = OneHotCategorical(probs=ohc_probs)
+		ohc_sample = ohc_dist.sample(sample_shape=(n_samples,))
+		ohc_sample = ohc_sample.unsqueeze(-1).transpose(0,1)
+		# [b,s,1,z]
+		samples = torch.sum(samples * ohc_sample, dim=2, keepdim=True)
+		# [b,s,m,z]
+		log_probs = self.dist.log_prob( \
+				samples.expand(-1,-1,means.shape[2],-1))
+		log_probs = torch.sum(log_probs, dim=3)
+		# [b,s]
+		log_probs = torch.logsumexp(log_probs - log(means.shape[2]), dim=2)
+		return samples.squeeze(2), log_probs
+
+
+	def stratified_forward(self, means, precisions, n_samples=1, samples=None):
 		"""
 		Produce stratified samples and evaluate their log probability.
 
@@ -183,35 +230,12 @@ class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
 			Log probability of samples under the mixture distribution.
 			Shape: [batch,n_samples,modalities]
 		"""
-		return self._helper(
-				means,
-				precisions,
-				n_samples=n_samples,
-				samples=samples,
-		)
-
-
-	def log_prob(self, samples, means, precisions):
-		"""
-
-		"""
-		return self._helper(means, precisions, samples=samples)[1]
-
-
-	def _helper(self, means, precisions, samples=None, n_samples=1):
-		"""
-		If `samples` is given, evaluate their log probability. Otherwise, make
-		samples and evaluate their log probability.
-		"""
-		if isinstance(means, (tuple,list)): # not vectorized
-			raise NotImplementedError
-		std_devs = torch.sqrt(torch.reciprocal(precisions + EPS))
+		std_devs = torch.sqrt(torch.reciprocal(precisions + EPS)) # [b,m,z]
 		means = means.unsqueeze(1) # [b,1,m,z]
 		std_devs = std_devs.unsqueeze(1) # [b,1,m,z]
 		self.dist = Normal(means, std_devs) # [b,1,m,z]
 		if samples is None:
-			# [s,b,1,m,z]
-			samples = self.dist.rsample(sample_shape=(n_samples,))
+			samples = self.dist.rsample(sample_shape=(n_samples,)) # [s,b,1,m,z]
 			samples = samples.squeeze(2).transpose(0,1) # [b,s,m,z]
 		# [b,s,m]
 		log_probs = torch.zeros(samples.shape[:3], device=means.device)
@@ -228,35 +252,38 @@ class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
 		return samples, log_probs
 
 
-	def non_stratified_forward(self, means, precisions, n_samples=1):
+	def log_prob(self, samples, means, precisions, stratified=False):
 		"""
-		Standard (non-stratified) sampling version of `forward`.
+		Evaluate the log probability of the samples.
 
-		* useful for MLL estimation
+		Parameters
+		----------
+		samples : torch.Tensor
+			Shape: [b,s,z]
+		means : torch.Tensor
+			Shape: [b,m,z]
+		precisions : torch.Tensor
+			Shape: [b,m,z]
+		stratified : bool, optional
+
+		Returns
+		-------
+		log_prob : torch.Tensor
+			Shape:
+				[b,s,m] if stratified
+				[b,s] otherwise
 		"""
-		assert not isinstance(means, (tuple,list))
-		std_devs = torch.sqrt(torch.reciprocal(precisions + EPS))
-		means = means.unsqueeze(1) # [b,1,m,z]
-		std_devs = std_devs.unsqueeze(1) # [b,1,m,z]
-		self.dist = Normal(means, std_devs) # [b,1,m,z]
-		# if samples is None:
-		# [s,b,1,m,z]
-		samples = self.dist.rsample(sample_shape=(n_samples,))
-		samples = samples.squeeze(2).transpose(0,1) # [b,s,m,z]
-		ohc_probs = torch.ones(means.shape[0],means.shape[2], \
-				device=means.device)
-		ohc_dist = OneHotCategorical(probs=ohc_probs)
-		ohc_sample = ohc_dist.sample(sample_shape=(n_samples,))
-		ohc_sample = ohc_sample.unsqueeze(-1).transpose(0,1)
-		# [b,s,1,z]
-		samples = torch.sum(samples * ohc_sample, dim=2, keepdim=True)
-		# [b,s,m,z]
-		log_probs = self.dist.log_prob( \
-				samples.expand(-1,-1,means.shape[2],-1))
-		log_probs = torch.sum(log_probs, dim=3)
-		# [b,s]
-		log_probs = torch.logsumexp(log_probs - log(means.shape[2]), dim=2)
-		return samples.squeeze(2), log_probs
+		if stratified:
+			return self.stratified_forward(
+					means,
+					precisions,
+					samples=samples,
+			)[1]
+		return self.forward(
+				means,
+				precisions,
+				samples=samples,
+		)[1]
 
 
 

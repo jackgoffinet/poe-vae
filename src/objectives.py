@@ -19,6 +19,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from .param_maps import DATASET_MAP
+
 
 
 class VaeObjective(torch.nn.Module):
@@ -56,9 +58,12 @@ class VaeObjective(torch.nn.Module):
 		raise NotImplementedError
 
 
-	def encode(self, xs, nan_mask, n_samples=1):
+	def encode(self, xs, nan_mask, n_samples=1, return_params=False, \
+		stratified=False):
 		"""
 		Standard encoding procedure.
+
+		TO DO: update shapes for stratified case
 
 		Parameters
 		----------
@@ -68,15 +73,26 @@ class VaeObjective(torch.nn.Module):
 				[modalities][batch,m_dim] otherwise
 		nan_mask : torch.Tensor
 			Shape: [batch,modalities]
+		n_samples : int, optional
+		return_params : bool, optional
+		stratified : bool, optional
+			Whether to perform stratified sampling
 
-		Returns
-		-------
 		z_samples : torch.Tensor
-			Shape: [batch,samples,z_dim]
+			Shape:
+				[batch,samples,modalities,z_dim] if stratified
+				[batch,samples,z_dim] otherwise
 		log_qz : torch.Tensor
-			Shape: [batch,samples]
+			Shape:
+				[batch,samples,modalities] if stratified
+				[batch,samples] otherwise
 		log_pz : torch.Tensor
-			Shape: [batch,samples]
+			Shape:
+				[batch,samples,modalities] if stratified
+				[batch,samples] otherwise
+		variational_posterior_params : tuple of torch.Tensor
+			Returned if `return_params`.
+			Shape: [n_params][b,*]
 		"""
 		# Encode data.
 		# encoding shape:
@@ -86,10 +102,17 @@ class VaeObjective(torch.nn.Module):
 		# Transpose first two dimensions: [n_params][m][b,param_dim]
 		if isinstance(xs, (tuple,list)):
 			encoding = tuple(tuple(e) for e in zip(*encoding))
-		return self._encode_helper(encoding, nan_mask, n_samples=n_samples)
+		return self._encode_helper(
+				encoding,
+				nan_mask,
+				n_samples=n_samples,
+				return_params=return_params,
+				stratified=stratified,
+		)
 
 
-	def _encode_helper(self, encoding, nan_mask, n_samples=1):
+	def _encode_helper(self, encoding, nan_mask, n_samples=1, \
+		return_params=False, stratified=False):
 		"""
 		Parameters
 		----------
@@ -100,15 +123,27 @@ class VaeObjective(torch.nn.Module):
 		nan_mask : torch.Tensor
 			Shape: [batch,modalities]
 		n_samples : int, optional
+		return_params : bool, optional
+		stratified : bool, optional
+			Whether to perform stratified sampling
 
 		Returns
 		-------
 		z_samples : torch.Tensor
-			Shape: [batch,samples,z_dim]
+			Shape:
+				[batch,samples,modalities,z_dim] if stratified
+				[batch,samples,z_dim] otherwise
 		log_qz : torch.Tensor
-			Shape: [batch,samples]
+			Shape:
+				[batch,samples,modalities] if stratified
+				[batch,samples] otherwise
 		log_pz : torch.Tensor
-			Shape: [batch,samples]
+			Shape:
+				[batch,samples,modalities] if stratified
+				[batch,samples] otherwise
+		variational_posterior_params : tuple of torch.Tensor
+			Returned if `return_params`.
+			Shape: [n_params][b,*]
 		"""
 		# Combine evidence.
 		# var_post_params shape: [n_params][b,*] where * is parameter dim.s.
@@ -117,21 +152,26 @@ class VaeObjective(torch.nn.Module):
 				nan_mask=nan_mask,
 		)
 		# Make a variational posterior and sample.
-		# z_samples : [b,s,z]
-		# log_qz : [b,z]
-		if hasattr(self.variational_posterior, 'non_stratified_forward'):
-			z_samples, log_qz = \
-					self.variational_posterior.non_stratified_forward(
-						*var_post_params,
-						n_samples=n_samples,
-					)
+		# z_samples:
+		#	[b,s,m,z] if stratified
+		#	[b,s,z] otherwise
+		# log_qz:
+		#	[b,s,m] if stratified
+		#	[b,z] otherwise
+		if stratified:
+			z_samples, log_qz = self.variational_posterior.stratified_forward(
+				*var_post_params,
+				n_samples=n_samples,
+			)
 		else:
 			z_samples, log_qz = self.variational_posterior(
 					*var_post_params,
 					n_samples=n_samples,
 			)
 		# Evaluate prior.
-		log_pz = self.prior(z_samples) # [b,s]
+		log_pz = self.prior(z_samples) # [b,s,m] or [b,s]
+		if return_params:
+			return z_samples, log_qz, log_pz, var_post_params
 		return z_samples, log_qz, log_pz
 
 
@@ -230,6 +270,7 @@ class VaeObjective(torch.nn.Module):
 			# [n_params][1,m,m_dim] if vectorized
 			# [n_params][m][1,s,x] otherwise
 			like_params = self.decoder(z_samples)
+			# generated: [m][1,s,sub_modalities,m_dim]
 			if likelihood_noise:
 				generated = self.likelihood.sample(like_params)
 			else:
@@ -390,69 +431,33 @@ class DregIwaeElbo(VaeObjective):
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		xs, nan_mask = apply_nan_mask(xs)
-		# Encode data.
-		# encoding shape:
-		# [n_params][b,m,param_dim] if vectorized
-		# [m][n_params][b,param_dim] otherwise
-		encoding = self.encoder(xs)
-		# Transpose first two dimensions: [n_params][m][b,param_dim]
-		if isinstance(xs, (tuple,list)):
-			encoding = tuple(tuple(e) for e in zip(*encoding))
-		# Combine evidence.
-		# var_post_params shape: [n_params][b,*] where * is parameter dim.s.
-		var_post_params = self.variational_strategy(
-				*encoding,
-				nan_mask=nan_mask,
+		# Encode observed modalities.
+		# z_samples: [b,s,z]
+		# log_pz: [b,s]
+		# var_post_params: [n_params][b,*]
+		z_samples, _, log_pz, var_post_params = self.encode(
+				xs,
+				nan_mask,
+				n_samples=self.k,
+				return_params=True,
 		)
-		# Make a variational posterior and sample.
-		# z_samples : [b,s,z]
-		# log_qz : [b,z]
-		if hasattr(self.variational_posterior, 'non_stratified_forward'):
-			z_samples, log_qz = \
-					self.variational_posterior.non_stratified_forward(
-						*var_post_params,
-						n_samples=self.k,
-					)
-		else:
-			z_samples, log_qz = self.variational_posterior(
-					*var_post_params,
-					n_samples=self.k,
-			)
-		# Evaluate prior.
-		log_pz = self.prior(z_samples) # [b,s]
-
-
-
-		# # Combine evidence.
-		# var_post_params = self.variational_strategy(
-		# 		*var_dist_params,
-		# 		nan_mask=nan_mask,
-		# )
-		# # Make a variational posterior and sample.
-		# z_samples, _ = self.variational_posterior(
-		# 		*var_post_params,
-		# 		n_samples=self.k,
-		# ) # [b,s,z]
-		# # Evaluate prior.
-		# log_pz = self.prior(z_samples) # [b,s]
-
 		# Now stop gradients through the encoder when evaluating log q(z|x).
 		detached_params = [param.detach() for param in var_post_params]
 		log_qz = self.variational_posterior.log_prob(
-				z_samples.transpose(0,1),
+				z_samples,
 				*detached_params,
 		) # [b,s]
 		assert log_pz.shape[1] == self.k # assert k samples
 		assert log_qz.shape[1] == self.k # assert k samples
 		# Decode.
 		log_likes = self.decode(z_samples, xs, nan_mask) # [b,s]
-		assert log_likes.shape[1] == self.k # assert k samples
+		assert log_likes.shape[1] == self.k # assert s samples
 		# Define importance weights.
-		log_ws = log_pz + log_likes - log_qz - np.log(self.k) # [b,k]
+		log_ws = log_pz + log_likes - log_qz - np.log(self.k) # [b,s]
 		# Doubly reparameterized gradients
 		with torch.no_grad():
 			weights = log_ws - torch.logsumexp(log_ws, dim=1, keepdim=True)
-			weights = torch.exp(weights) # [b,k]
+			weights = torch.exp(weights) # [b,s]
 			if z_samples.requires_grad:
 				z_samples.register_hook(lambda grad: weights.unsqueeze(-1)*grad)
 		# Evaluate loss.
@@ -463,16 +468,17 @@ class DregIwaeElbo(VaeObjective):
 
 class MmvaeElbo(VaeObjective):
 
-	def __init__(self, vae, K=10, **kwargs):
+	def __init__(self, vae, K=10, dataset='mnist_halves', **kwargs):
 		super(MmvaeElbo, self).__init__(vae)
-		self.k = args.K
-		self.M = args.dataset.n_modalities
+		self.k = K
+		self.M = DATASET_MAP[dataset].n_modalities
 
 	def forward(self, xs):
 		"""
-		Stratified sampling ELBO from Shi et al. (2019), Eq. 3.
+		Stratified sampling IW-ELBO from Shi et al. (2019), Eq. 3.
 
 		K samples are drawn from every mixture component. Uses DReG gradients.
+		This is the same as `DregIwaeElbo`, but with stratified sampling.
 
 		Parameters
 		----------
@@ -483,25 +489,33 @@ class MmvaeElbo(VaeObjective):
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		xs, nan_mask = apply_nan_mask(xs)
-		# Encode data.
-		var_dist_params = self.encoder(xs) # [n_params][b,m,param_dim]
-		# Combine evidence.
-		var_post_params = self.variational_strategy(*var_dist_params, \
-				nan_mask=nan_mask)
-		# Make a variational posterior and sample.
-		z_samples, _ = self.variational_posterior(*var_post_params, \
-				n_samples=self.k) # [b,s,m,z]
-		# Evaluate prior.
-		log_pz = self.prior(z_samples) # [b,s,m]
+
+		# Encode observed modalities.
+		# z_samples: [b,s,m,z]
+		# log_pz: [b,s,m]
+		# var_post_params: [n_params][b,*]
+		z_samples, _, log_pz, var_post_params = self.encode(
+				xs,
+				nan_mask,
+				n_samples=self.k,
+				return_params=True,
+				stratified=True,
+		)
+
 		# Now stop gradients through the encoder when evaluating log q(z|x).
 		detached_params = [param.detach() for param in var_post_params]
-		# [b,s,m]
-		log_qz = self.variational_posterior.log_prob(z_samples, \
-				*detached_params)
+		log_qz = self.variational_posterior.log_prob(
+				z_samples,
+				*detached_params,
+				stratified=True,
+		) # [b,s,m]
+
+
 		assert log_pz.shape[1] == self.k # assert k samples
 		assert log_qz.shape[1] == self.k # assert k samples
 		# Decode.
 		z_samples = z_samples.contiguous() # not ideal!
+		# [b,s*m,z]
 		z_samples = z_samples.view(z_samples.shape[0],-1,z_samples.shape[3])
 		# [b,s,m]
 		log_likes = self.decode(z_samples, xs, nan_mask).view(log_qz.shape)
@@ -512,10 +526,13 @@ class MmvaeElbo(VaeObjective):
 		log_ws = log_pz + log_likes - log_qz - np.log(self.k) # [b,s,m]
 		with torch.no_grad():
 			weights = log_ws - torch.logsumexp(log_ws, dim=1, keepdim=True)
-			weights = torch.exp(weights) # [b,k,m]
-			def hook_func(grad):
-				return weights.view(grad.shape[0],-1).unsqueeze(-1) * grad
-			z_samples.register_hook(hook_func)
+			weights = torch.exp(weights) # [b,s,m]
+			# If the outer function isn't in a torch.no_grad() context,
+			# register a hook.
+			if log_ws.requires_grad:
+				def hook_func(grad):
+					return weights.view(grad.shape[0],-1).unsqueeze(-1) * grad
+				z_samples.register_hook(hook_func)
 		# Evaluate loss.
 		elbo = torch.mean(torch.sum(weights * log_ws, dim=1), dim=1)
 		assert len(elbo.shape) == 1 and elbo.shape[0] == log_ws.shape[0]

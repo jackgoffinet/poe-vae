@@ -172,7 +172,14 @@ def check_args(
 
 	Parameters
 	----------
-	TO DO: update this
+	variational_strategy : str, optional
+	variational_posterior : str, optional
+	prior : str, optional
+	likelihood : str, optional
+	objective : str, optional
+	latent_dim : int, optional
+	vmf_dim : int, optional
+	n_vmfs : int, optional
 	"""
 	# Make sure we recognize the inputs.
 	assert variational_strategy in VAR_STRATEGY_MAP.keys(), \
@@ -220,6 +227,12 @@ def check_args(
 		assert objective in ['iwae', 'dreg_iwae'], \
 				"Only the IWAE or DReG IWAE objectives can be used with a " \
 				+ "Location/Scale EBM variational strategy."
+	# Check objective-related issues.
+	if objective == 'mmvae_elbo':
+		assert variational_posterior == 'diag_gaussian_mixture', \
+				"Only posteriors that support stratified sampling can be " \
+				+ "used with the MMVAE ELBO. Right now, that is just " \
+				+ "'diag_gaussian_mixture'."
 
 
 def hash_json_str(json_str):
