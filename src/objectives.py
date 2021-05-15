@@ -66,7 +66,7 @@ class VaeObjective(torch.nn.Module):
 			Shape:
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
-		nan_mask : torch.Tensor or tuple of torch.Tensor
+		nan_mask : torch.Tensor
 			Shape: [batch,modalities]
 
 		Returns
@@ -79,7 +79,7 @@ class VaeObjective(torch.nn.Module):
 			Shape: [batch,samples]
 		"""
 		# Encode data.
-		# `encoding` shape:
+		# encoding shape:
 		# [n_params][b,m,param_dim] if vectorized
 		# [m][n_params][b,param_dim] otherwise
 		encoding = self.encoder(xs)
@@ -90,6 +90,26 @@ class VaeObjective(torch.nn.Module):
 
 
 	def _encode_helper(self, encoding, nan_mask, n_samples=1):
+		"""
+		Parameters
+		----------
+		encoding : tuple of torch.Tensor or tuple of tuple of torch.Tensor
+			Shape:
+				[n_params][b,m,param_dim] if vectorized
+				[m][n_params][b,param_dim] otherwise
+		nan_mask : torch.Tensor
+			Shape: [batch,modalities]
+		n_samples : int, optional
+
+		Returns
+		-------
+		z_samples : torch.Tensor
+			Shape: [batch,samples,z_dim]
+		log_qz : torch.Tensor
+			Shape: [batch,samples]
+		log_pz : torch.Tensor
+			Shape: [batch,samples]
+		"""
 		# Combine evidence.
 		# var_post_params shape: [n_params][b,*] where * is parameter dim.s.
 		var_post_params = self.variational_strategy(
@@ -111,7 +131,7 @@ class VaeObjective(torch.nn.Module):
 					n_samples=n_samples,
 			)
 		# Evaluate prior.
-		log_pz = self.prior(z_samples)
+		log_pz = self.prior(z_samples) # [b,s]
 		return z_samples, log_qz, log_pz
 
 
@@ -296,9 +316,9 @@ class StandardElbo(VaeObjective):
 		assert log_likes.shape[1] == 1 # assert single sample
 		log_likes = log_likes.squeeze(1) # [b], remove sample dimension
 		# Evaluate loss.
-		assert len(log_pz.shape) == 1
-		assert len(log_likes.shape) == 1
-		assert len(kld.shape) == 1
+		assert len(log_pz.shape) == 1, f"len({log_pz.shape}) != 1"
+		assert len(log_likes.shape) == 1, f"len({log_likes.shape}) != 1"
+		assert len(kld.shape) == 1, f"len({kld.shape}) != 1"
 		loss = -torch.mean(log_pz + log_likes - kld)
 		return loss
 
@@ -356,32 +376,72 @@ class DregIwaeElbo(VaeObjective):
 		"""
 		Evaluate the multisample IWAE ELBO with the DReG estimator.
 
-		TO DO: test with non-vectorized data
-
 		Parameters
 		----------
 		xs : torch.Tensor or tuple of torch.Tensor
 			Shape:
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
+
+		Returns
+		-------
+		loss : torch.Tensor
+			Shape: []
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		xs, nan_mask = apply_nan_mask(xs)
 		# Encode data.
-		var_dist_params = self.encoder(xs) # [n_params][b,m,param_dim]
+		# encoding shape:
+		# [n_params][b,m,param_dim] if vectorized
+		# [m][n_params][b,param_dim] otherwise
+		encoding = self.encoder(xs)
+		# Transpose first two dimensions: [n_params][m][b,param_dim]
+		if isinstance(xs, (tuple,list)):
+			encoding = tuple(tuple(e) for e in zip(*encoding))
 		# Combine evidence.
-		var_post_params = self.variational_strategy(*var_dist_params, \
-				nan_mask=nan_mask)
+		# var_post_params shape: [n_params][b,*] where * is parameter dim.s.
+		var_post_params = self.variational_strategy(
+				*encoding,
+				nan_mask=nan_mask,
+		)
 		# Make a variational posterior and sample.
-		z_samples, _ = self.variational_posterior(*var_post_params, \
-				n_samples=self.k) # [b,s,z]
+		# z_samples : [b,s,z]
+		# log_qz : [b,z]
+		if hasattr(self.variational_posterior, 'non_stratified_forward'):
+			z_samples, log_qz = \
+					self.variational_posterior.non_stratified_forward(
+						*var_post_params,
+						n_samples=self.k,
+					)
+		else:
+			z_samples, log_qz = self.variational_posterior(
+					*var_post_params,
+					n_samples=self.k,
+			)
 		# Evaluate prior.
 		log_pz = self.prior(z_samples) # [b,s]
+
+
+
+		# # Combine evidence.
+		# var_post_params = self.variational_strategy(
+		# 		*var_dist_params,
+		# 		nan_mask=nan_mask,
+		# )
+		# # Make a variational posterior and sample.
+		# z_samples, _ = self.variational_posterior(
+		# 		*var_post_params,
+		# 		n_samples=self.k,
+		# ) # [b,s,z]
+		# # Evaluate prior.
+		# log_pz = self.prior(z_samples) # [b,s]
+
 		# Now stop gradients through the encoder when evaluating log q(z|x).
 		detached_params = [param.detach() for param in var_post_params]
-		# [b,s]
-		log_qz = self.variational_posterior.log_prob(z_samples.transpose(0,1), \
-				*detached_params)
+		log_qz = self.variational_posterior.log_prob(
+				z_samples.transpose(0,1),
+				*detached_params,
+		) # [b,s]
 		assert log_pz.shape[1] == self.k # assert k samples
 		assert log_qz.shape[1] == self.k # assert k samples
 		# Decode.

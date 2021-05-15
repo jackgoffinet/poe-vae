@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 
 from .encoders_decoders import SplitLinearLayer, NetworkList, GatherLayer, \
-		UnsqueezeLayer
+		UnsqueezeLayer, ConcatLayer
 from .likelihoods import GroupedLikelihood
 from .param_maps import LIKELIHOOD_MAP
 
@@ -17,9 +17,8 @@ from .param_maps import LIKELIHOOD_MAP
 
 def get_vae(
 		variational_strategy='gaussian_poe',
-		variational_posterior='diag_gaussian',
-		prior='standard_gaussian',
 		likelihood='bernoulli',
+		unstructured_encoder=False,
 		**kwargs,
 ):
 	"""
@@ -30,8 +29,14 @@ def get_vae(
 	vae : dict
 		Maps keys 'encoder', 'decoder', and 'likelihood' to torch.nn.Modules.
 	"""
-	return {
-		'encoder': NetworkList(
+	vae = {}
+	if unstructured_encoder:
+		vae['encoder'] = make_unstructured_encoder(
+				variational_strategy=variational_strategy,
+				**kwargs,
+		)
+	else:
+		vae['encoder'] = NetworkList(
 			nn.ModuleList([
 				make_single_encoder(
 						variational_strategy=variational_strategy,
@@ -42,63 +47,70 @@ def get_vae(
 						**kwargs,
 				),
 			]),
-		),
-		'decoder': make_decoder(
-				variational_strategy=variational_strategy,
-				**kwargs,
-		),
-		'likelihood': likelihood_helper(
-				likelihood=likelihood,
-				**kwargs,
-		),
-	}
+		)
+	vae['decoder'] = make_decoder(
+			variational_strategy=variational_strategy,
+			**kwargs,
+	)
+	vae['likelihood'] = likelihood_helper(
+			likelihood=likelihood,
+			**kwargs,
+	)
+	return vae
 
 
 def make_single_encoder(variational_strategy='gaussian_poe', latent_dim=20,
 	vmf_dim=4, n_vmfs=5, theta_dim=4, **kwargs):
-	if variational_strategy == 'gaussian_poe':
-		z_dim = latent_dim
-		return nn.Sequential(
-			nn.Linear(784//2,500),
-			nn.ReLU(),
-			nn.Linear(500,500),
-			nn.ReLU(),
-			nn.Linear(500,200),
-			nn.ReLU(),
-			SplitLinearLayer(200,(z_dim,z_dim)),
-		)
+	if variational_strategy in ['gaussian_poe', 'gaussian_moe']:
+		out_dims = (latent_dim, latent_dim)
 	elif variational_strategy == 'vmf_poe':
-		z_dim = (vmf_dim + 1) * n_vmfs
-		return nn.Sequential(
-			nn.Linear(784//2,500),
-			nn.ReLU(),
-			nn.Linear(500,500),
-			nn.ReLU(),
-			nn.Linear(500,200),
-			nn.ReLU(),
-			nn.Linear(200,z_dim),
-			GatherLayer(),
-		)
+		out_dims = ((vmf_dim + 1) * n_vmfs,)
 	elif variational_strategy == 'loc_scale_ebm':
-		z_dim = latent_dim
-		return nn.Sequential(
-			nn.Linear(784//2,500),
-			nn.ReLU(),
-			nn.Linear(500,500),
-			nn.ReLU(),
-			nn.Linear(500,200),
-			nn.ReLU(),
-			SplitLinearLayer(200,(theta_dim,z_dim,z_dim)),
-		)
+		out_dims = (theta_dim,latent_dim,latent_dim)
 	else:
 		err_str = f"{variational_strategy} not implemented for " + \
 				f"mnist_halves_model!"
 		raise NotImplementedError(err_str)
+	return nn.Sequential(
+		nn.Linear(784//2,500),
+		nn.ReLU(),
+		nn.Linear(500,500),
+		nn.ReLU(),
+		nn.Linear(500,200),
+		nn.ReLU(),
+		SplitLinearLayer(200, out_dims),
+	)
+
+
+def make_unstructured_encoder(variational_strategy='gaussian_poe', \
+	latent_dim=20, vmf_dim=4, n_vmfs=5, theta_dim=4, **kwargs):
+	""" """
+	if variational_strategy in ['gaussian_poe', 'gaussian_moe']:
+		out_dims = (latent_dim, latent_dim)
+	elif variational_strategy == 'vmf_poe':
+		out_dims = ((vmf_dim + 1) * n_vmfs,)
+	elif variational_strategy == 'loc_scale_ebm':
+		out_dims = (theta_dim,latent_dim,latent_dim)
+	else:
+		err_str = f"{variational_strategy} not implemented for " + \
+				f"mnist_halves_model!"
+		raise NotImplementedError(err_str)
+	return nn.Sequential(
+		ConcatLayer(),
+		nn.Linear(784,500),
+		nn.ReLU(),
+		nn.Linear(500,500),
+		nn.ReLU(),
+		nn.Linear(500,200),
+		nn.ReLU(),
+		SplitLinearLayer(200, out_dims),
+		GatherLayer(transpose=False),
+	)
 
 
 def make_decoder(variational_strategy='gaussian_poe', latent_dim=20, \
 	vmf_dim=4, n_vmfs=5, **kwargs):
-	if variational_strategy in ['gaussian_poe', 'loc_scale_ebm']:
+	if variational_strategy in ['gaussian_poe', 'gaussian_moe','loc_scale_ebm']:
 		z_dim = latent_dim
 	elif variational_strategy == 'vmf_poe':
 		z_dim = (vmf_dim + 1) * n_vmfs

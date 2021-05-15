@@ -120,17 +120,26 @@ class GaussianMoeStrategy(torch.nn.Module):
 
 		Parameters
 		----------
-		means : list of torch.Tensor
-			means[modality] = [...fill in dimensions...]
-		log_precisions : list of torch.Tensor
+		means : torch.Tenosr or tuple of torch.Tensor
+			Shape:
+				[b,m,z] if vectorized
+				[m][b,z] otherwise
+		log_precisions : torch.Tensor ot tuple of torch.Tensor
+			Shape:
+				[b,m,z] if vectorized
+				[m][b,z] otherwise
 		nan_mask : torch.Tensor
 			Indicates where data is missing.
-			Shape: [b,m]
+			Shape: [batch,modality]
 
 		Returns
 		-------
+		mean : torch.Tensor
+			Shape: [batch, m, z_dim]
+		precision : torch.Tensor
+			Shape: [batch, m, z_dim]
 		"""
-		tuple_flag = isinstance(means, tuple) # not vectorized
+		tuple_flag = isinstance(means, (tuple,list)) # not vectorized
 		if tuple_flag:
 			means = torch.stack(means, dim=1) # [b,m,z]
 			log_precisions = torch.stack(log_precisions, dim=1)
@@ -215,9 +224,6 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 		The other EBM parameters, the thetas, are simply passed. The NaN mask
 		is also passed.
 
-		Parameters
-		----------
-		...
 		"""
 		super(LocScaleEbmStrategy, self).__init__()
 

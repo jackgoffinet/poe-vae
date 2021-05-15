@@ -71,16 +71,32 @@ class SplitLinearLayer(torch.nn.Module):
 
 
 
+class ConcatLayer(torch.nn.Module):
+
+	def __init__(self, dim=-1):
+		super(ConcatLayer, self).__init__()
+		self.dim = dim
+
+	def forward(self, args):
+		return torch.cat(args, dim=self.dim)
+
+
+
 class GatherLayer(torch.nn.Module):
 
-	def __init__(self):
+	def __init__(self, transpose=False):
 		"""
 		Take inputs and wrap them in a tuple.
 		"""
 		super(GatherLayer, self).__init__()
+		self.transpose = transpose
 
 	def forward(self, args):
-		return (args,)
+		temp = (args,)
+		if self.transpose:
+			temp = tuple(tuple(t) for t in zip(*temp))
+		return temp
+
 
 
 class SqueezeLayer(torch.nn.Module):

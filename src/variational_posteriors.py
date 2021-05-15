@@ -3,7 +3,8 @@ Define variational posteriors.
 
 TO DO
 -----
-* EnergyBasedModelPosterior assumes a standard Gaussian prior. Generalize this!
+* LocScaleEbmPosterior assumes a standard Gaussian prior. Generalize this!
+* Implement LocScaleEbmPosterior log_prob, check the other log probs
 """
 __date__ = "January - May 2021"
 
@@ -28,7 +29,7 @@ class AbstractVariationalPosterior(torch.nn.Module):
 		super(AbstractVariationalPosterior, self).__init__()
 		self.dist = None
 
-	def forward(self, *dist_parameters, n_samples=1):
+	def forward(self, *dist_parameters, n_samples=1, samples=None):
 		"""
 		Produce reparamaterized samples and evaluate their log probability.
 
@@ -38,13 +39,17 @@ class AbstractVariationalPosterior(torch.nn.Module):
 			Distribution parameters, probably containing torch.Tensors.
 		n_samples : int, optional
 			Number of samples to draw.
+		samples : torch.Tensor or None, optional
+			Pass to use these samples instead of drawing new samples.
 
 		Returns
 		-------
 		samples : torch.Tensor
-			Samples from the distribution. Shape: TO DO
+			Samples from the distribution.
+			Shape: ???
 		log_prob : torch.Tensor
 			Log probability of samples under the distribution.
+			Shape: ???
 		"""
 		raise NotImplementedError
 
@@ -61,6 +66,23 @@ class AbstractVariationalPosterior(torch.nn.Module):
 		raise NotImplementedError(err_str)
 
 
+	def log_prob(self, samples, *dist_parameters):
+		"""
+		Estimate the log probability of the samples on the distribution.
+
+		Parameters
+		----------
+		samples : torch.Tensor
+			Shape: ???
+
+		Returns
+		-------
+		log_probs : torch.Tensor
+			Shape: ???
+		"""
+		return self(*dist_parameters, samples=samples)[0]
+
+
 
 class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 
@@ -69,7 +91,8 @@ class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 		super(DiagonalGaussianPosterior, self).__init__()
 		self.dist = None
 
-	def forward(self, mean, precision, n_samples=1, transpose=True):
+	def forward(self, mean, precision, n_samples=1, transpose=True, \
+		samples=None):
 		"""
 		Produce reparamaterized samples and evaluate their log probability.
 
@@ -81,6 +104,7 @@ class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 			Shape [batch, z_dim]
 		n_samples : int
 		transpose : bool
+		samples : torch.Tensor or None
 
 		Returns
 		-------
@@ -96,7 +120,8 @@ class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 				"len(mean.shape) == len({})".format(mean.shape)
 		std_dev = torch.sqrt(torch.reciprocal(precision + EPS))
 		self.dist = Normal(mean, std_dev)
-		samples = self.dist.rsample(sample_shape=(n_samples,)) # [s,b,z]
+		if samples is None:
+			samples = self.dist.rsample(sample_shape=(n_samples,)) # [s,b,z]
 		log_prob = self.dist.log_prob(samples).sum(dim=2) # Sum over latent dim
 		if transpose:
 			return samples.transpose(0,1), log_prob.transpose(0,1)
@@ -127,7 +152,7 @@ class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 
 class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
 
-	def __init__(self, args):
+	def __init__(self, **kwargs):
 		"""
 		Mixture of diagonal Gaussians variational posterior.
 
@@ -135,7 +160,7 @@ class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
 		"""
 		super(DiagonalGaussianMixturePosterior, self).__init__()
 
-	def forward(self, means, precisions, n_samples=1):
+	def forward(self, means, precisions, n_samples=1, samples=None):
 		"""
 		Produce stratified samples and evaluate their log probability.
 
@@ -145,8 +170,9 @@ class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
 			Shape [batch, modalities, z_dim]
 		precisions : torch.Tensor
 			Shape [batch, modalities, z_dim]
-		n_samples : int
+		n_samples : int, optional
 			Samples per modality.
+		samples : torch.Tensor or None, optional
 
 		Returns
 		-------
@@ -157,7 +183,12 @@ class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
 			Log probability of samples under the mixture distribution.
 			Shape: [batch,n_samples,modalities]
 		"""
-		return self._helper(means, precisions, n_samples=n_samples)
+		return self._helper(
+				means,
+				precisions,
+				n_samples=n_samples,
+				samples=samples,
+		)
 
 
 	def log_prob(self, samples, means, precisions):
@@ -172,30 +203,29 @@ class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
 		If `samples` is given, evaluate their log probability. Otherwise, make
 		samples and evaluate their log probability.
 		"""
-		if type(means) == type([]): # not vectorized
+		if isinstance(means, (tuple,list)): # not vectorized
 			raise NotImplementedError
-		else: # vectorized
-			std_devs = torch.sqrt(torch.reciprocal(precisions + EPS))
-			means = means.unsqueeze(1) # [b,1,m,z]
-			std_devs = std_devs.unsqueeze(1) # [b,1,m,z]
-			self.dist = Normal(means, std_devs) # [b,1,m,z]
-			if samples is None:
-				# [s,b,1,m,z]
-				samples = self.dist.rsample(sample_shape=(n_samples,))
-				samples = samples.squeeze(2).transpose(0,1) # [b,s,m,z]
-			# [b,s,m]
-			log_probs = torch.zeros(samples.shape[:3], device=means.device)
-			# For each modality m...
-			M = log_probs.shape[2]
-			for m in range(M):
-				# Take the samples produced by expert m.
-				temp_samples = samples[:,:,m:m+1] # [b,s,1,z]
-				# And evaluate their log probability under all the experts.
-				temp_logp = self.dist.log_prob(temp_samples).sum(dim=3)
-				# Convert to a log probability under the MoE.
-				temp_logp = torch.logsumexp(temp_logp - log(M), dim=2)
-				log_probs[:,:,m] = temp_logp
-			return samples, log_probs
+		std_devs = torch.sqrt(torch.reciprocal(precisions + EPS))
+		means = means.unsqueeze(1) # [b,1,m,z]
+		std_devs = std_devs.unsqueeze(1) # [b,1,m,z]
+		self.dist = Normal(means, std_devs) # [b,1,m,z]
+		if samples is None:
+			# [s,b,1,m,z]
+			samples = self.dist.rsample(sample_shape=(n_samples,))
+			samples = samples.squeeze(2).transpose(0,1) # [b,s,m,z]
+		# [b,s,m]
+		log_probs = torch.zeros(samples.shape[:3], device=means.device)
+		# For each modality m...
+		M = log_probs.shape[2]
+		for m in range(M):
+			# Take the samples produced by expert m.
+			temp_samples = samples[:,:,m:m+1] # [b,s,1,z]
+			# And evaluate their log probability under all the experts.
+			temp_logp = self.dist.log_prob(temp_samples).sum(dim=3)
+			# Convert to a log probability under the MoE.
+			temp_logp = torch.logsumexp(temp_logp - log(M), dim=2)
+			log_probs[:,:,m] = temp_logp
+		return samples, log_probs
 
 
 	def non_stratified_forward(self, means, precisions, n_samples=1):
@@ -204,31 +234,29 @@ class DiagonalGaussianMixturePosterior(AbstractVariationalPosterior):
 
 		* useful for MLL estimation
 		"""
-		if type(means) == type([]): # not vectorized
-			raise NotImplementedError
-		else: # vectorized
-			std_devs = torch.sqrt(torch.reciprocal(precisions + EPS))
-			means = means.unsqueeze(1) # [b,1,m,z]
-			std_devs = std_devs.unsqueeze(1) # [b,1,m,z]
-			self.dist = Normal(means, std_devs) # [b,1,m,z]
-			# if samples is None:
-			# [s,b,1,m,z]
-			samples = self.dist.rsample(sample_shape=(n_samples,))
-			samples = samples.squeeze(2).transpose(0,1) # [b,s,m,z]
-			ohc_probs = torch.ones(means.shape[0],means.shape[2], \
-					device=means.device)
-			ohc_dist = OneHotCategorical(probs=ohc_probs)
-			ohc_sample = ohc_dist.sample(sample_shape=(n_samples,))
-			ohc_sample = ohc_sample.unsqueeze(-1).transpose(0,1)
-			# [b,s,1,z]
-			samples = torch.sum(samples * ohc_sample, dim=2, keepdim=True)
-			# [b,s,m,z]
-			log_probs = self.dist.log_prob( \
-					samples.expand(-1,-1,means.shape[2],-1))
-			log_probs = torch.sum(log_probs, dim=3)
-			# [b,s]
-			log_probs = torch.logsumexp(log_probs - log(means.shape[2]), dim=2)
-			return samples.squeeze(2), log_probs
+		assert not isinstance(means, (tuple,list))
+		std_devs = torch.sqrt(torch.reciprocal(precisions + EPS))
+		means = means.unsqueeze(1) # [b,1,m,z]
+		std_devs = std_devs.unsqueeze(1) # [b,1,m,z]
+		self.dist = Normal(means, std_devs) # [b,1,m,z]
+		# if samples is None:
+		# [s,b,1,m,z]
+		samples = self.dist.rsample(sample_shape=(n_samples,))
+		samples = samples.squeeze(2).transpose(0,1) # [b,s,m,z]
+		ohc_probs = torch.ones(means.shape[0],means.shape[2], \
+				device=means.device)
+		ohc_dist = OneHotCategorical(probs=ohc_probs)
+		ohc_sample = ohc_dist.sample(sample_shape=(n_samples,))
+		ohc_sample = ohc_sample.unsqueeze(-1).transpose(0,1)
+		# [b,s,1,z]
+		samples = torch.sum(samples * ohc_sample, dim=2, keepdim=True)
+		# [b,s,m,z]
+		log_probs = self.dist.log_prob( \
+				samples.expand(-1,-1,means.shape[2],-1))
+		log_probs = torch.sum(log_probs, dim=3)
+		# [b,s]
+		log_probs = torch.logsumexp(log_probs - log(means.shape[2]), dim=2)
+		return samples.squeeze(2), log_probs
 
 
 
@@ -241,7 +269,7 @@ class VmfProductPosterior(AbstractVariationalPosterior):
 		self.vmf_dim = vmf_dim
 		self.dist = None
 
-	def forward(self, kappa_mu, n_samples=1):
+	def forward(self, kappa_mu, n_samples=1, samples=None):
 		"""
 		Produce reparamaterized samples and evaluate their log probability.
 
@@ -249,7 +277,8 @@ class VmfProductPosterior(AbstractVariationalPosterior):
 		----------
 		kappa_mu : torch.Tensor
 			Shape : [b,n_vmfs,vmf_dim+1]
-		n_samples : int
+		n_samples : int, optional
+		samples : torch.Tensor or None, optional
 
 		Returns
 		-------
@@ -264,7 +293,8 @@ class VmfProductPosterior(AbstractVariationalPosterior):
 		scale = torch.norm(kappa_mu, dim=2, keepdim=True)
 		loc = kappa_mu / (scale + EPS)
 		self.dist = VonMisesFisher(loc, scale)
-		samples = self.dist.rsample(shape=n_samples) # [s,b,n_vmfs,vmf_dim+1]
+		if samples is None:
+			samples = self.dist.rsample(shape=n_samples) #[s,b,n_vmfs,vmf_dim+1]
 		log_prob = self.dist.log_prob(samples).sum(dim=-1) #[s,b]
 		# samples shape: [s,b,n_vmfs*(vmf_dim+1)]
 		samples = samples.view(samples.shape[:2]+(-1,))
@@ -355,7 +385,7 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 
 
 	def forward(self, thetas, mean, precision, means, precisions, nan_mask, \
-		n_samples=1):
+		n_samples=1, samples=None):
 		"""
 		Produce reparamaterized samples and evaluate their log probability.
 
@@ -374,6 +404,7 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 		nan_mask : torch.Tensor
 			Shape: [b,m]
 		n_samples : int, optional
+		samples : torch.Tensor or None, optional
 
 		Returns
 		-------
@@ -383,6 +414,8 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 			Log probability of samples under the distribution.
 			Shape: [batch,s]
 		"""
+		if samples is not None:
+			raise NotImplementedError
 		# Make proposal distribution.
 		std_dev = torch.reciprocal(torch.sqrt(precision) + EPS)
 		pi_dist = Normal(mean, std_dev)

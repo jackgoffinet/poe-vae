@@ -181,6 +181,7 @@ def main(
 		prior='standard_gaussian',
 		likelihood='spherical_gaussian',
 		objective='elbo',
+		unstructured_encoder=False,
 		lr=1e-3,
 		K=10,
 		ebm_samples=10,
@@ -232,6 +233,9 @@ def main(
 	objective : str, optional
 		The objective to use. See `src.param_maps.OBJECTIVE_MAP` for all
 		options.
+	unstructured_encoder : bool, optional
+		Whether to concatenate all the modalities together to make a single
+		unstructured recognition model.
 	lr : float, optional
 		Learning rate.
 	K : int, optional

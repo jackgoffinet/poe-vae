@@ -206,7 +206,13 @@ def check_args(
 				"When using a Gaussian product of experts, the variational " \
 				+ "posterior must be diagonal Gaussian."
 	elif variational_strategy == 'gaussian_moe':
-		raise NotImplementedError
+		assert variational_posterior == 'diag_gaussian_mixture', \
+				"When using a Gaussian mixture of experts, the variational " \
+				+ "posterior must be a diagonal Gaussian mixture."
+		assert objective in ['iwae', 'dreg_iwae', 'mmvae_elbo'], \
+				"The Gaussian mixture of experts strategy can only be used " \
+				"with objectives that don't require analytic KL-divergence. " \
+				"Choose from ['iwae', 'dreg_iwae', 'mmvae_elbo']."
 	elif variational_strategy == 'loc_scale_ebm':
 		assert variational_posterior == 'loc_scale_ebm', \
 				"Only the variational posterior 'loc_scale_ebm' can be used" \

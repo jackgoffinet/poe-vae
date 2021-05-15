@@ -14,7 +14,10 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 
-from .datasets import GENERATE_FN, TRAIN_RECONSTRUCT_FN, TEST_RECONSTRUCT_FN
+
+GENERATE_FN = 'generations.pdf'
+TRAIN_RECONSTRUCT_FN = 'train_reconstructions.pdf'
+TEST_RECONSTRUCT_FN = 'test_reconstructions.pdf'
 
 
 

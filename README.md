@@ -88,7 +88,7 @@ for epoch in range(100):
    `--variational-posterior=diag_gaussian_mixture`
    `--prior=standard_gaussian`
    `--objective=mmvae_elbo`
-* [s-VAE](https://arxiv.org/abs/1804.00891) (single modality)
+* [s-VAE](https://arxiv.org/abs/1804.00891) (originally a single modality VAE)
    `--variational-strategy=vmf_poe`
    `--variational-posterior=vmf_product`
    `--prior=uniform_hyperspherical`
@@ -124,7 +124,7 @@ existing training framework, you will also have to modify `DATASET_MAP` and
   experts strategy for combining evidence across modalities.
 * [MMVAE repo](https://github.com/iffsid/mmvae), uses a mixture of experts
   strategy for combining evidence across modalities.
-* [Hyperspherical VAE Repo](https://github.com/nicola-decao/s-vae-pytorch), a
+* [Hyperspherical VAE repo](https://github.com/nicola-decao/s-vae-pytorch), a
   VAE with a latent space defined on an n-sphere with von
   Mises-Fisher-distributed approximate posteriors.
 
@@ -139,5 +139,5 @@ existing training framework, you will also have to modify `DATASET_MAP` and
 20. Student experts
 21. Compare network architectures w/ other papers
 22. partial-VAE implementation
-23. Clean up the dataset/model correspondence
 25. Add a documentation markdown file
+26. Add an unstructured recognition model
