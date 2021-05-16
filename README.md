@@ -26,9 +26,9 @@ from src.priors import StandardGaussianPrior
 from src.variational_posteriors import DiagonalGaussianPosterior
 from src.variational_strategies import GaussianPoeStrategy
 
-# Make a VAE with two modalities, both with 392 dimensions. The VAE is simply
-# a collection of different pieces, with each piece subclassing
-# `torch.nn.Module`.
+# Make a VAE with two modalities, both with 392 dimensions, and a 20-dimensional
+# latent space. The VAE is simply a collection of different pieces, with each
+# piece subclassing `torch.nn.Module`.
 latent_dim, m_dim = 20, 392
 vae = nn.ModuleDict({
   'encoder': NetworkList(
@@ -65,7 +65,7 @@ vae = nn.ModuleDict({
 # `torch.nn.Module`.
 objective = StandardElbo(vae)
 
-# Train.
+# Train the VAE like any other PyTorch model.
 loader = make_dataloader(...)
 optimizer = torch.optim.Adam(objective)
 for epoch in range(100):
@@ -133,11 +133,13 @@ existing training framework, you will also have to modify `DATASET_MAP` and
 12. Validation set for early stopping
 15. Double check DReG gradients
 16. STL gradients
-17. AR-ELBO
 18. Well-defined proposals for EBM MLL
 19. Implement EBM IWAE variants
 20. Student experts
 21. Compare network architectures w/ other papers
 22. partial-VAE implementation
 25. Add a documentation markdown file
-26. Add an unstructured recognition model
+27. AR-ELBO needs new variational strategies?
+28. Implement jackknife variational inference?
+29. Implement vMF/vMF KL-divergence
+30. AR-ELBO: EBM and vMF models

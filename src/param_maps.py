@@ -54,13 +54,14 @@ LIKELIHOOD_MAP = {
 
 # Objectives
 from .objectives import StandardElbo, IwaeElbo, DregIwaeElbo, MmvaeElbo, \
-		MvaeElbo
+		MvaeElbo, ArElbo
 OBJECTIVE_MAP = {
 	'elbo': StandardElbo,
 	'iwae': IwaeElbo,
 	'dreg_iwae': DregIwaeElbo,
 	'mmvae_elbo': MmvaeElbo,
 	'mvae_elbo': MvaeElbo,
+	'ar_elbo': ArElbo,
 }
 
 

@@ -193,6 +193,7 @@ def main(
 		n_vmfs=5,
 		theta_dim=4,
 		embed_dim=8,
+		ar_step_size=1,
 		obs_std_dev=0.1,
 		pre_trained=False,
 		mll_freq=1000,
@@ -264,6 +265,8 @@ def main(
 		For energy-based approximate posteriors.
 	embed_dim : int, optional
 		For learning a modality embedding.
+	ar_step_size : int, optional
+		How many modalities to condition on in each step of the AR-ELBO.
 	obs_std_dev : float, optional
 		Observation standard deviation. For Gaussian likelihoods.
 	pre_trained : bool, optional

@@ -86,23 +86,29 @@ class AbstractVariationalPosterior(torch.nn.Module):
 
 
 class DiagonalGaussianPosterior(AbstractVariationalPosterior):
+	EPS = 1e-5
 
 	def __init__(self, **kwargs):
 		"""Diagonal Gaussian varitional posterior."""
 		super(DiagonalGaussianPosterior, self).__init__()
 		self.dist = None
+		self.prec_mean = None
+		self.precision = None
 
-	def forward(self, mean, precision, n_samples=1, transpose=True, \
+
+	def forward(self, prec_mean, precision, n_samples=1, transpose=True, \
 		samples=None):
 		"""
 		Produce reparamaterized samples and evaluate their log probability.
 
+		Note: is `transpose` used?
+
 		Parameters
 		----------
-		mean : torch.Tensor
-			Shape [batch,z_dim]
+		prec_mean : torch.Tensor
+			Precision/mean product. Shape: [batch,z_dim]
 		precision : torch.Tensor
-			Shape [batch, z_dim]
+			Precision (inverse variance). Shape: [batch, z_dim]
 		n_samples : int
 		transpose : bool
 		samples : torch.Tensor or None
@@ -115,39 +121,123 @@ class DiagonalGaussianPosterior(AbstractVariationalPosterior):
 			Log probability of samples under the distribution.
 			Shape: [batch,n_samples]
 		"""
-		assert mean.shape == precision.shape, \
-				"{} != {}".format(mean.shape,precision.shape)
-		assert len(mean.shape) == 2, \
-				"len(mean.shape) == len({})".format(mean.shape)
-		std_dev = torch.sqrt(torch.reciprocal(precision + EPS))
+		assert prec_mean.shape == precision.shape, \
+				f"{mean.shape} != {precision.shape}"
+		assert len(prec_mean.shape) == 2, f"len({prec_mean.shape}) != 2"
+		mean = prec_mean / (precision + self.EPS)
+		std_dev = torch.sqrt(torch.reciprocal(precision + self.EPS))
 		self.dist = Normal(mean, std_dev)
 		if samples is None:
 			samples = self.dist.rsample(sample_shape=(n_samples,)) # [s,b,z]
-		log_prob = self.dist.log_prob(samples).sum(dim=2) # Sum over latent dim
+		log_prob = self.dist.log_prob(samples).sum(dim=2) # sum over z dim
 		if transpose:
 			return samples.transpose(0,1), log_prob.transpose(0,1)
 		return samples, log_prob
 
 
-	def rsample(self):
-		""" """
-		raise NotImplementedError
-
-
-	def log_prob(self, samples, mean, precision, transpose=True):
+	def log_prob(self, samples, prec_mean, precision, transpose=False):
 		"""
-		...
+		Estimate the log probability of the samples on the distribution.
+
+		Note: is `transpose` used?
 
 		Parameters
 		----------
-		samples : torch.Tensor [...]
+		samples : torch.Tensor
+			Shape: [b,s,z]
+		prec_mean : torch.Tensor
+			Shape: [b,z]
+		precision : torch.Tensor
+			Shape: [b,z]
+		transpose : bool, optional
+
+		Returns
+		-------
+		log_prob : torch.Tensor
+			Shape: [b,s]
 		"""
-		std_dev = torch.sqrt(torch.reciprocal(precision + EPS))
-		self.dist = Normal(mean, std_dev)
+		mean = prec_mean / (precision + self.EPS)
+		std_dev = torch.sqrt(torch.reciprocal(precision + self.EPS))
+		self.dist = Normal(mean.unsqueeze(1), std_dev.unsqueeze(1))
 		log_prob = self.dist.log_prob(samples).sum(dim=2) # Sum over latent dim
 		if transpose:
 			return log_prob.transpose(0,1)
 		return log_prob
+
+
+	def add_evidence(self, prec_means, precisions, m_idx, \
+		start_from_prior=True):
+		"""
+		Add additional evidence to the approximate posterior.
+
+		Return the KL-divergence to the previous beliefs.
+
+		Parameters
+		----------
+		prec_means : torch.Tensor
+			Precision/mean product. Shape: [batch,m,z_dim]
+		precisions : torch.Tensor
+			Precision (inverse variance). Shape: [batch,m,z_dim]
+		m_idx : torch.Tensor
+			Shape: [b,m] or [m]
+		start_from_prior : bool, optional
+			Whether to start from prior beliefs or previous beliefs.
+
+		Returns
+		-------
+		kld : torch.Tensor
+			Shape: [b]
+		"""
+		if len(m_idx.shape) == 1:
+			precision = torch.sum(precisions[:,m_idx], dim=1) # [b,z]
+			prec_mean = torch.sum(prec_means[:,m_idx], dim=1) # [b,z]
+		else:
+			# PyTorch doesn't have a batched index-select?!
+			precision = torch.stack(
+					[a[i] for a,i in zip(precisions,m_idx)],
+					dim=0,
+			).sum(dim=1) # [b,z]
+			prec_mean = torch.stack(
+					[a[i] for a,i in zip(precisions,m_idx)],
+					dim=0,
+			).sum(dim=1) # [b,z]
+		if start_from_prior:
+			# Set self.dist to the prior.
+			self.dist = Normal(
+					torch.zeros_like(precision),
+					torch.ones_like(precision),
+			)
+			self.precision = precision + 1.0 # add 1 for prior expert, [b,z]
+			self.prec_mean = prec_mean # [b,z]
+		else:
+			assert self.dist is not None, "self.dist is None!"
+			self.precision = self.precision + precision
+			self.prec_mean = self.prec_mean + prec_mean
+		# Calculate KL.
+		mean = self.prec_mean / (self.precision + self.EPS) # [b,z]
+		std_dev = torch.sqrt(torch.reciprocal(self.precision + self.EPS)) #[b,z]
+		updated_dist = Normal(mean, std_dev)
+		kld = torch.distributions.kl_divergence(updated_dist, self.dist) # [b,z]
+		# Update the distribution.
+		self.dist = updated_dist
+		return torch.sum(kld, dim=1) # [b]
+
+
+	def rsample(self, n_samples=1):
+		"""
+		Return reparameterized samples.
+
+		Parameters
+		----------
+		n_samples : int, optional
+
+		Returns
+		-------
+		z_samples : torch.Tensor
+			Shape: [b,s,z]
+		"""
+		assert self.dist is not None, "self.dist is None!"
+		return self.dist.rsample(sample_shape=(n_samples,)).transpose(0,1)
 
 
 
@@ -411,8 +501,8 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 		return h
 
 
-	def forward(self, thetas, mean, precision, means, precisions, nan_mask, \
-		n_samples=1, samples=None):
+	def forward(self, thetas, pi_mean, pi_precision, means, precisions, \
+		nan_mask, n_samples=1, samples=None):
 		"""
 		Produce reparamaterized samples and evaluate their log probability.
 
@@ -420,9 +510,9 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 		----------
 		thetas : torch.Tensor
 			Shape: [b,m,theta]
-		mean : torch.Tensor
+		pi_mean : torch.Tensor
 			Proposal mean. Shape: [b,z_dim]
-		precision : torch.Tensor
+		pi_precision : torch.Tensor
 			Proposal precision. Shape: [b,z_dim]
 		means : torch.Tensor
 			Modality-specific means. Shape: [b,m,z_dim]
@@ -444,8 +534,8 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 		if samples is not None:
 			raise NotImplementedError
 		# Make proposal distribution.
-		std_dev = torch.reciprocal(torch.sqrt(precision) + EPS)
-		pi_dist = Normal(mean, std_dev)
+		pi_std_dev = torch.reciprocal(torch.sqrt(pi_precision) + EPS)
+		pi_dist = Normal(pi_mean, pi_std_dev)
 		# Get proposal samples and log probs: [s,k,b,z], [s,k,b,z]
 		pi_samples = pi_dist.rsample(sample_shape=(n_samples,self.k))
 		pi_log_prob = pi_dist.log_prob(pi_samples)

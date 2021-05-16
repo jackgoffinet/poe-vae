@@ -57,7 +57,7 @@ class GaussianPoeStrategy(AbstractVariationalStrategy):
 		super(GaussianPoeStrategy, self).__init__()
 
 
-	def forward(self, means, log_precisions, nan_mask=None):
+	def forward(self, means, log_precisions, nan_mask=None, collapse=True):
 		"""
 		Given means and log precisions, output the product mean and precision.
 
@@ -74,13 +74,22 @@ class GaussianPoeStrategy(AbstractVariationalStrategy):
 		nan_mask : torch.Tensor
 			Indicates where data is missing.
 			Shape: [batch,modality]
+		collapse : bool, optional
+			Whether to collapse across modalities.
 
 		Returns
 		-------
-		mean : torch.Tensor
-			Shape: [batch, z_dim]
-		precision : torch.Tensor
-			Shape: [batch, z_dim]
+		if `collapse`:
+			prec_mean : torch.Tensor
+				Shape: [batch, z_dim]
+			precision : torch.Tensor
+				Shape: [batch, z_dim]
+		else:
+			prec_means : torch.Tensor
+				Shape: [b,m,z]
+			precisions : torch.Tensor
+				Does not include the prior expert!
+				Shape: [b,m,z]
 		"""
 		if isinstance(means, (tuple,list)): # not vectorized
 			means = torch.stack(means, dim=1) # [b,m,z]
@@ -88,15 +97,42 @@ class GaussianPoeStrategy(AbstractVariationalStrategy):
 		precisions = torch.exp(log_precisions) # [b,m,z]
 		if nan_mask is not None:
 			temp_mask = nan_mask
-			assert len(precisions.shape) == 3
+			assert len(precisions.shape) == 3, f"len({precisions.shape}) != 3"
 			temp_mask = (~temp_mask).float().unsqueeze(-1)
 			temp_mask = temp_mask.expand(-1,-1,precisions.shape[2])
 			precisions = precisions * temp_mask
 		# Combine all the experts. Include the 1.0 for the prior expert!
-		precision = torch.sum(precisions, dim=1) + 1.0 # [b,z_dim]
-		prec_mean = torch.sum(means * precisions, dim=1) # [b,z_dim]
-		mean = prec_mean / (precision + self.EPS)
-		return mean, precision
+		prec_means = means * precisions
+		if collapse:
+			return self.collapse(prec_means, precisions)
+		return prec_means, precisions
+
+
+	def collapse(self, prec_means, precisions, include_prior=True):
+		"""
+		Collapse across modalities, combining evidence.
+
+		Parameters
+		----------
+		prec_means : torch.Tensor
+			Shape: [b,m,z]
+		precisions : torch.Tensor
+			Shape: [b,m,z]
+		include_prior : bool, optional
+			Whether to include the effect of the prior expert.
+
+		Returns
+		-------
+		prec_mean : torch.Tensor
+			Shape: [b,z]
+		precision : torch.Tensor
+			Shape: [b,z]
+		"""
+		precision = torch.sum(precisions, dim=1) # [b,m,z] -> [b,z]
+		if include_prior:
+			precision = precision + 1.0
+		prec_mean = torch.sum(prec_means, dim=1) # [b,m,z] -> [b,z]
+		return prec_mean, precision
 
 
 
@@ -144,7 +180,7 @@ class GaussianMoeStrategy(torch.nn.Module):
 			means = torch.stack(means, dim=1) # [b,m,z]
 			log_precisions = torch.stack(log_precisions, dim=1)
 		precisions = torch.exp(log_precisions) # [b,m,z]
-		# Where things are NaNs, replace mixture components with the prior.
+		# Where modalities are missing, sample from the prior.
 		if nan_mask is not None:
 			temp_mask = nan_mask
 			assert len(precisions.shape) == 3
@@ -166,7 +202,8 @@ class VmfPoeStrategy(AbstractVariationalStrategy):
 
 		Parameters
 		----------
-		...
+		n_vmfs : int, optional
+		vmf_dim : int, optional
 		"""
 		super(VmfPoeStrategy, self).__init__()
 		self.n_vmfs = n_vmfs
@@ -175,6 +212,7 @@ class VmfPoeStrategy(AbstractVariationalStrategy):
 
 	def forward(self, kappa_mus, nan_mask=None):
 		"""
+		Multiply the vMF's given by the kappa_mus.
 
 		Parameters
 		----------
@@ -268,7 +306,7 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 			Shape : [b,m]
 		"""
 		if isinstance(means, (tuple,list)):
-			thetas = torch.stack(thetas, dim=1)
+			thetas = torch.stack(thetas, dim=1) # [b,m,theta]
 			means = torch.stack(means, dim=1) # [b,m,z]
 			log_precisions = torch.stack(log_precisions, dim=1) # [b,m,z]
 		precisions = log_precisions.exp() # [b,m,z]

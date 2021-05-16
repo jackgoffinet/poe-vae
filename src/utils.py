@@ -170,6 +170,8 @@ def check_args(
 	"""
 	Check the arguments.
 
+	TO DO: some strategies assume standard normal priors.
+
 	Parameters
 	----------
 	variational_strategy : str, optional
@@ -184,18 +186,18 @@ def check_args(
 	# Make sure we recognize the inputs.
 	assert variational_strategy in VAR_STRATEGY_MAP.keys(), \
 			f"Invalid variational strategy {variational_strategy}! " + \
-			f"Choose one of: {VAR_STRATEGY_MAP.keys()}"
+			f"Choose one of: {list(VAR_STRATEGY_MAP.keys())}"
 	assert variational_posterior in VAR_POSTERIOR_MAP.keys(), \
 			f"Invalid variational posterior {variational_posterior}! " + \
-			f"Choose one of: {VAR_POSTERIOR_MAP.keys()}"
+			f"Choose one of: {list(VAR_POSTERIOR_MAP.keys())}"
 	assert prior in PRIOR_MAP.keys(), \
-			f"Invalid prior {prior}! Choose one of: {PRIOR_MAP.keys()}"
+			f"Invalid prior {prior}! Choose one of: {list(PRIOR_MAP.keys())}"
 	assert likelihood in LIKELIHOOD_MAP.keys(), \
 			"Invalid likelihood {likelihood}! " + \
-			f"Choose one of: {LIKELIHOOD_MAP.keys()}"
+			f"Choose one of: {list(LIKELIHOOD_MAP.keys())}"
 	assert objective in OBJECTIVE_MAP.keys(), \
 			f"Invalid objective {objective}! " + \
-			"Choose one of: {OBJECTIVE_MAP.keys()}"
+			f"Choose one of: {list(OBJECTIVE_MAP.keys())}"
 	# Check variational strategy-related issues.
 	if variational_strategy == 'vmf_poe':
 		z_dim = vmf_dim * n_vmfs
@@ -233,6 +235,12 @@ def check_args(
 				"Only posteriors that support stratified sampling can be " \
 				+ "used with the MMVAE ELBO. Right now, that is just " \
 				+ "'diag_gaussian_mixture'."
+	elif objective == 'ar_elbo':
+		assert variational_posterior in ['diag_gaussian', 'loc_scale_ebm'], \
+				"The AR-ELBO is only compatible with variational posteriors " \
+				+ "that factorize and have within-family KL divergences " \
+				+ "implemented. Right now, this is just 'diag_gaussian' and " \
+				+ "'loc_scale_ebm'."
 
 
 def hash_json_str(json_str):

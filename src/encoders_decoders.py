@@ -35,11 +35,11 @@ class NetworkList(torch.nn.Module):
 		----------
 		xs : tuple of torch.Tensor
 		"""
-		if isinstance(xs, (tuple,list)):
-			assert len(xs) == len(self.nets)
-			outputs = tuple(net(x) for net, x in zip(self.nets, xs))
-		else:
-			outputs = tuple(net(xs) for net in self.nets)
+		# if isinstance(xs, (tuple,list)):
+		assert len(xs) == len(self.nets)
+		outputs = tuple(net(x) for net, x in zip(self.nets, xs))
+		# else:
+		# outputs = tuple(net(xs) for net in self.nets)
 		return outputs
 
 

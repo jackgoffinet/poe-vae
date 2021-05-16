@@ -63,8 +63,6 @@ class VaeObjective(torch.nn.Module):
 		"""
 		Standard encoding procedure.
 
-		TO DO: update shapes for stratified case
-
 		Parameters
 		----------
 		xs : torch.Tensor or tuple of torch.Tensor
@@ -114,6 +112,8 @@ class VaeObjective(torch.nn.Module):
 	def _encode_helper(self, encoding, nan_mask, n_samples=1, \
 		return_params=False, stratified=False):
 		"""
+		This helper is separate so that MvaeElbo can be a bit more efficient.
+
 		Parameters
 		----------
 		encoding : tuple of torch.Tensor or tuple of tuple of torch.Tensor
@@ -175,7 +175,7 @@ class VaeObjective(torch.nn.Module):
 		return z_samples, log_qz, log_pz
 
 
-	def decode(self, z_samples, xs, nan_mask):
+	def decode(self, z_samples, xs, nan_mask, combine_modalities=True):
 		"""
 		Standard decoding procedure.
 
@@ -189,11 +189,15 @@ class VaeObjective(torch.nn.Module):
 				[modalities][batch,m_dim] otherwise
 		nan_mask : torch.Tensor
 			Shape: [batch,modalities]
+		combine_modalities : bool, optional
+			Sum the log likelihood over the modality dimension.
 
 		Returns
 		-------
 		log_likes : torch.Tensor
-			Shape: [batch,samples]
+			Shape:
+				[batch,samples] if combine_modalities
+				[batch,samples,m] otherwise
 		"""
 		# Decode samples to get likelihood parameters.
 		# like_params shape:
@@ -206,13 +210,14 @@ class VaeObjective(torch.nn.Module):
 				like_params,
 				nan_mask=nan_mask,
 		) # [b,s,m]
-		log_likes = torch.sum(log_likes, dim=2) # [b,s]
-		return log_likes
+		if combine_modalities:
+			return torch.sum(log_likes, dim=2) # [b,s]
+		return log_likes # [b,s,m]
 
 
 	def estimate_marginal_log_like(self, xs, n_samples=1000, keepdim=False):
 		"""
-		Estimate the MLL of the data `xs`.
+		Estimate the marginal log likelihood of the data `xs`.
 
 		Parameters
 		----------
@@ -326,8 +331,8 @@ class StandardElbo(VaeObjective):
 		----
 		* Requires an analytic KL-divergence from the variational posterior to
 		  the prior. If we don't have that, consider using the IWAE objective
-		  with a single sample. Or I could implement a sampling-based KL in
-		  AbstractVariationalPosterior.
+		  with a single sample. Or I could implement a sampling-based KL
+		  approximation in AbstractVariationalPosterior.
 
 		Parameters
 		----------
@@ -345,11 +350,7 @@ class StandardElbo(VaeObjective):
 		xs, nan_mask = apply_nan_mask(xs)
 		# Encode.
 		# z_samples : [b,s,z]
-		# log_qz : [b,s]
-		# log_pz : [b,s]
-		z_samples, log_qz, log_pz = self.encode(xs, nan_mask)
-		assert log_pz.shape[1] == 1 # assert single sample
-		log_pz = log_pz.squeeze(1) # [b], remove sample dimension.
+		z_samples, _, _ = self.encode(xs, nan_mask)
 		# Evaluate KL.
 		kld = self.variational_posterior.kld(self.prior).sum(dim=1) # [b]
 		# Decode.
@@ -357,10 +358,9 @@ class StandardElbo(VaeObjective):
 		assert log_likes.shape[1] == 1 # assert single sample
 		log_likes = log_likes.squeeze(1) # [b], remove sample dimension
 		# Evaluate loss.
-		assert len(log_pz.shape) == 1, f"len({log_pz.shape}) != 1"
 		assert len(log_likes.shape) == 1, f"len({log_likes.shape}) != 1"
 		assert len(kld.shape) == 1, f"len({kld.shape}) != 1"
-		loss = -torch.mean(log_pz + log_likes - kld)
+		loss = -torch.mean(log_likes - kld)
 		return loss
 
 
@@ -416,6 +416,9 @@ class DregIwaeElbo(VaeObjective):
 	def forward(self, xs):
 		"""
 		Evaluate the multisample IWAE ELBO with the DReG estimator.
+
+		DReG = Doubly Reparameterized Gradients from Tucker et al. (2018)
+		https://arxiv.org/abs/1810.04152
 
 		Parameters
 		----------
@@ -573,7 +576,6 @@ class MvaeElbo(VaeObjective):
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		xs, nan_mask = apply_nan_mask(xs)
-
 		# Encode the data once.
 		# encoding shape:
 		# [n_params][b,m,param_dim] if vectorized
@@ -582,7 +584,6 @@ class MvaeElbo(VaeObjective):
 		# Transpose first two dimensions: [n_params][m][b,param_dim]
 		if isinstance(xs, (tuple,list)):
 			encoding = tuple(tuple(e) for e in zip(*encoding))
-
 		# Create different NaN masks for each ELBO.
 		# Append the fully observed mask.
 		nan_masks = [nan_mask]
@@ -596,7 +597,6 @@ class MvaeElbo(VaeObjective):
 			mask = F.one_hot(torch.tensor([i]), num_classes=nan_mask.shape[1])
 			mask = mask.to(torch.bool).expand(nan_mask.shape[0], -1)
 			nan_masks.append(mask)
-
 		# For each NaN mask calculate a standard ELBO loss.
 		losses = []
 		for mask in nan_masks:
@@ -619,31 +619,21 @@ class MvaeElbo(VaeObjective):
 
 
 
-class SnisElbo(VaeObjective):
-
-	def __init__(self, vae, K=10, **kwargs):
-		super(SnisElbo, self).__init__(vae)
-		self.k = K
-
-	def forward(self, xs):
-		"""
-		Evaluate a self-normalized importance sampling ELBO.
-
-		Parameters
-		----------
-		xs : torch.Tensor or tuple of torch.Tensor
-			Shape:
-				[batch,modalities,m_dim] if vectorized
-				[modalities][batch,m_dim] otherwise
-		"""
-		raise NotImplementedError
-
-
-
 class ArElbo(VaeObjective):
 
-	def __init__(self, vae, **kwargs):
+	def __init__(self, vae, ar_step_size=1, dataset='mnist_halves', **kwargs):
+		"""
+		Parameters
+		----------
+		vae : torch.nn.ModuleDict
+		ar_step_size : int, optional
+			How many modalities to condition on in each step.
+		dataset : str, optional
+			Used to determine the number of modalities.
+		"""
 		super(ArElbo, self).__init__(vae)
+		self.step = ar_step_size
+		self.M = DATASET_MAP[dataset].n_modalities
 
 	def forward(self, xs):
 		"""
@@ -656,13 +646,79 @@ class ArElbo(VaeObjective):
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
 		"""
-		raise NotImplementedError
+		# Get missingness pattern, replace with zeros to prevent NaN gradients.
+		xs, nan_mask = apply_nan_mask(xs)
+		# Encode data.
+		# encoding shape:
+		# [n_params][b,m,param_dim] if vectorized
+		# [m][n_params][b,param_dim] otherwise
+		encoding = self.encoder(xs)
+		# Transpose first two dimensions: [n_params][m][b,param_dim]
+		if isinstance(xs, (tuple,list)):
+			encoding = tuple(tuple(e) for e in zip(*encoding))
+		# Get evidence.
+		# var_post_params shape: [n_params][b,m,*] where * is parameter dim.s.
+		var_post_params = self.variational_strategy(
+				*encoding,
+				nan_mask=nan_mask,
+				collapse=False,
+		)
+		# Define a random permutation of modalities.
+		# Option 1: (much faster)
+		perm = torch.randperm(self.M) # [m]
+		# # Option 2:
+		# perm = torch.stack(
+		# 		[torch.randperm(self.M) for _ in range(len(nan_mask))],
+		# 		dim=0,
+		# ) # [b,m]
+		# Collect log likelihoods and KL-divergences.
+		log_likes, klds = [], []
+		i = 0
+		while i < self.M:
+			# Option 1:
+			perm_slice = perm[i:min(self.M, i+self.step)]
+			# # Option 2:
+			# perm_slice = perm[:,i:min(self.M, i+self.step)]
+			# Combine evidence across a few more modalities.
+			kld = self.variational_posterior.add_evidence(
+					*var_post_params,
+					perm_slice,
+					start_from_prior=(i==0),
+			) # [b]
+			klds.append(kld)
+			# Get latent samples.
+			z_samples = self.variational_posterior.rsample() # [b,s,z], s=1
+			# Decode.
+			# This is a bit wasteful, and could be improved, but we're going to
+			# decode all the modalities and only take the ones we want.
+			log_like = self.decode(
+					z_samples,
+					xs,
+					nan_mask,
+					combine_modalities=False,
+			).squeeze(1) # [b,s,m] -> [b,m]
+			# Option 1:
+			log_like = log_like[:,perm_slice].sum(dim=1) # [b,step] -> [b]
+			# # Option 2:
+			# log_like = torch.stack(
+			# 		[a[j] for a,j in zip(log_like, perm_slice)],
+			# 		dim=0,
+			# ).sum(dim=1) # [b,step] -> [b]
+			log_likes.append(log_like)
+			i += self.step
+		# Return a loss.
+		log_likes = torch.stack(log_likes, dim=1).sum(dim=1) # [b]
+		klds = torch.stack(klds, dim=1).sum(dim=1) # [b]
+		elbo = torch.mean(log_likes - klds) # [b] -> []
+		return -elbo
 
 
 
 def apply_nan_mask(xs):
 	"""
 	Find out where the data is missing, replace these entries with zeros.
+
+	Modalities are marked as missing with NaNs.
 
 	Parameters
 	----------
