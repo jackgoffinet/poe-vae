@@ -53,7 +53,7 @@ class SplitLinearLayer(torch.nn.Module):
 		Parameters
 		----------
 		in_dim : int
-		out_dims : list of int
+		out_dims : tuple of int
 		"""
 		super(SplitLinearLayer, self).__init__()
 		self.layers = [torch.nn.Linear(in_dim, out_dim) for out_dim in out_dims]

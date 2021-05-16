@@ -44,8 +44,11 @@ class MnistPixelsDataset(Dataset):
 		"""
 		self.missingness = missingness
 		self.num_missing = int(round(missingness * 784)) # per image
-		dataset = datasets.MNIST(data_dir, train=train, download=True)
-		self.data = dataset.data.view(-1,784,1)
+		orig_data = datasets.MNIST(data_dir, train=train, download=True).data
+		orig_data = orig_data.reshape(-1,784)
+		self.data = torch.zeros(orig_data.shape[0], 784, dtype=torch.uint8)
+		self.data[orig_data > 127] = 1
+		self.data = self.data.view(-1,784,1)
 		self.data = self.data.to(device=device, dtype=torch.float32)
 		with local_seed(seed):
 			for i in range(self.data.shape[0]):

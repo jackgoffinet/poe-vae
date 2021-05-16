@@ -421,6 +421,7 @@ class VmfProductPosterior(AbstractVariationalPosterior):
 
 
 class LocScaleEbmPosterior(AbstractVariationalPosterior):
+	EPS = 1e-5
 
 	def __init__(self, ebm_samples=10, theta_dim=4, latent_dim=20, **kwargs):
 		"""
@@ -435,6 +436,167 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 		self.e_1 = torch.nn.Linear(theta_dim+latent_dim, 16)
 		self.e_2 = torch.nn.Linear(16, 16)
 		self.e_3 = torch.nn.Linear(16, 1)
+		# Book-keeping for adding evidence.
+		self.pi_prec_mean = None
+		self.pi_precision = None
+
+
+	def forward(self, thetas, means, prec_means, precisions, nan_mask, \
+		n_samples=1, samples=None):
+		"""
+		Produce reparamaterized samples and evaluate their log probability.
+
+		Parameters
+		----------
+		thetas : torch.Tensor
+			Shape: [b,m,theta_dim]
+		means : torch.Tensor
+			Shape: [b,m,z]
+		prec_means : torch.Tensor
+			Shape: [b,m,z]
+		precisions : torch.Tensor
+			Shape: [b,m,z]
+		nan_mask : torch.Tensor
+			Shape : [b,m]
+		n_samples : int, optional
+		samples : torch.Tensor or None, optional
+
+		Returns
+		-------
+		samples : torch.Tensor
+			Samples from the distribution. Shape: [b,s,z]
+		log_prob : torch.Tensor
+			Log probability of samples under the distribution.
+			Shape: [b,s]
+		"""
+		if samples is not None:
+			raise NotImplementedError
+		# Make a proposal distribution.
+		pi_precision = torch.sum(precisions, dim=1) + 1.0 # [b,z]
+		pi_mean = prec_means.sum(dim=1) / (pi_precision + self.EPS) # [b,z]
+		pi_std_dev = torch.reciprocal(torch.sqrt(pi_precision) + self.EPS)
+		pi_dist = Normal(pi_mean, pi_std_dev)
+		# Get proposal samples and log probs: [s,k,b,z], [s,k,b,z]
+		pi_samples = pi_dist.rsample(sample_shape=(n_samples,self.k))
+		pi_log_prob = pi_dist.log_prob(pi_samples)
+		# [s,k,b,z] -> [b,s,k,z]
+		pi_samples = pi_samples.transpose(1,2).transpose(0,1)
+		# [s,k,b,z] -> [b,s,k]
+		pi_log_prob = pi_log_prob.transpose(1,2).transpose(0,1).sum(dim=-1)
+		# Get standardized versions of the proposal samples by representing
+		# them in each modality-specific reference frame. [b,m,s,k,z]
+		std_pi_samples = pi_samples.unsqueeze(1)-means.unsqueeze(2).unsqueeze(2)
+		# [b,m,s,k,z]
+		std_pi_samples = std_pi_samples * \
+				torch.sqrt(precisions.unsqueeze(2).unsqueeze(2) + self.EPS)
+		# Get energies by passing the thetas and standardized proposal samples
+		# through a network: [b,m,s,k]
+		energies = ENERGY_REG * self.energy_network(thetas, std_pi_samples)
+		# Sum over the modality energies, applying the missingness mask.
+		temp_mask = (~nan_mask).float().unsqueeze(-1).unsqueeze(-1) # [b,m,1,1]
+		energies = energies * temp_mask # [b,m,s,k]
+		energies = energies.sum(dim=1) # [b,s,k]
+		# OK -- if e is the output of the energy network, we're targeting the
+		# density \propto exp[-e(z)]pi(z) so that the proposal pi can regularize
+		# things. Then our target energy is E \equiv e(z) - log pi(z), but our
+		# importance weights are exp(-E(z))/pi(z), which is just exp(-e(z)).
+		#
+		# Calculate importance weights and energies.
+		log_iws = - energies # [b,s,k]
+		energies = energies - pi_log_prob # [b,s,k]
+		# Sample.
+		z_one_hot = gumbel_softmax(log_iws) # [b,s,k], last dim is one-hot
+		# [b,s,k] -> [b,s,k,z]
+		z_mask = z_one_hot.unsqueeze(-1).expand(-1,-1,-1,pi_samples.shape[-1])
+		z_samples = torch.sum(pi_samples * z_mask, dim=2) # [b,s,z]
+		# Estimate log probability under the EBM.
+		# We're making the approximation q(z_i|x) \approx EBM(z_i) / avg(w_j)
+		# => log q(z_i|x) \approx -E(z_i) - logavgexp(w_j)
+		log_avg_w = torch.logsumexp(log_iws, dim=-1) - log(self.k) # [b,s]
+		e_zi = torch.sum(energies * z_one_hot, dim=-1) # [b,s]
+		log_probs = - e_zi - log_avg_w # [b,s]
+		return z_samples, log_probs
+
+
+	def add_evidence(self, thetas, means, prec_means, precisions, nan_mask, \
+		m_idx, start_from_prior=True):
+		"""
+		Add additional evidence to the approximate posterior.
+
+		Estimate and return the KL-divergence to the previous beliefs.
+
+		Parameters
+		----------
+		thetas : torch.Tensor
+			Shape: [b,m,theta_dim]
+		means : torch.Tensor
+			Shape: [b,m,z]
+		prec_means : torch.Tensor
+			Shape: [b,m,z]
+		precisions : torch.Tensor
+			Shape: [b,m,z]
+		nan_mask : torch.Tensor
+			Shape : [b,m]
+		m_idx : torch.Tensor
+			Shape: [b,m] or [m]
+		start_from_prior : bool, optional
+			Whether to start from prior beliefs or previous beliefs.
+
+		Returns
+		-------
+		kld : torch.Tensor
+			Shape: [b]
+		"""
+		raise NotImplementedError
+		if len(m_idx.shape) == 1:
+			precision = torch.sum(precisions[:,m_idx], dim=1) # [b,z]
+			prec_mean = torch.sum(prec_means[:,m_idx], dim=1) # [b,z]
+		else:
+			# PyTorch doesn't have a batched index-select?!
+			precision = torch.stack(
+					[a[i] for a,i in zip(precisions,m_idx)],
+					dim=0,
+			).sum(dim=1) # [b,z]
+			prec_mean = torch.stack(
+					[a[i] for a,i in zip(precisions,m_idx)],
+					dim=0,
+			).sum(dim=1) # [b,z]
+		if start_from_prior:
+			# Set self.dist to the prior.
+			self.dist = Normal(
+					torch.zeros_like(precision),
+					torch.ones_like(precision),
+			)
+			self.precision = precision + 1.0 # add 1 for prior expert, [b,z]
+			self.prec_mean = prec_mean # [b,z]
+		else:
+			assert self.dist is not None, "self.dist is None!"
+			self.precision = self.precision + precision
+			self.prec_mean = self.prec_mean + prec_mean
+		# Calculate KL.
+		mean = self.prec_mean / (self.precision + self.EPS) # [b,z]
+		std_dev = torch.sqrt(torch.reciprocal(self.precision + self.EPS)) #[b,z]
+		updated_dist = Normal(mean, std_dev)
+		kld = torch.distributions.kl_divergence(updated_dist, self.dist) # [b,z]
+		# Update the distribution.
+		self.dist = updated_dist
+		return torch.sum(kld, dim=1) # [b]
+
+
+	def rsample(self, n_samples=1):
+		"""
+		Return reparameterized samples.
+
+		Parameters
+		----------
+		n_samples : int, optional
+
+		Returns
+		-------
+		z_samples : torch.Tensor
+			Shape: [b,s,z]
+		"""
+		raise NotImplementedError
 
 
 	# def proposal_network(self, thetas, n_samples=1):
@@ -499,81 +661,6 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 		h = F.relu(self.e_2(h))
 		h = self.e_3(h).squeeze(-1) # [b,m,s,k]
 		return h
-
-
-	def forward(self, thetas, pi_mean, pi_precision, means, precisions, \
-		nan_mask, n_samples=1, samples=None):
-		"""
-		Produce reparamaterized samples and evaluate their log probability.
-
-		Parameters
-		----------
-		thetas : torch.Tensor
-			Shape: [b,m,theta]
-		pi_mean : torch.Tensor
-			Proposal mean. Shape: [b,z_dim]
-		pi_precision : torch.Tensor
-			Proposal precision. Shape: [b,z_dim]
-		means : torch.Tensor
-			Modality-specific means. Shape: [b,m,z_dim]
-		precisions : torch.Tensor
-			Modality-specific precision. Shape: [b,m,z_dim]
-		nan_mask : torch.Tensor
-			Shape: [b,m]
-		n_samples : int, optional
-		samples : torch.Tensor or None, optional
-
-		Returns
-		-------
-		samples : torch.Tensor
-			Samples from the distribution. Shape: [batch,s,z_dim]
-		log_prob : torch.Tensor
-			Log probability of samples under the distribution.
-			Shape: [batch,s]
-		"""
-		if samples is not None:
-			raise NotImplementedError
-		# Make proposal distribution.
-		pi_std_dev = torch.reciprocal(torch.sqrt(pi_precision) + EPS)
-		pi_dist = Normal(pi_mean, pi_std_dev)
-		# Get proposal samples and log probs: [s,k,b,z], [s,k,b,z]
-		pi_samples = pi_dist.rsample(sample_shape=(n_samples,self.k))
-		pi_log_prob = pi_dist.log_prob(pi_samples)
-		# [s,k,b,z] -> [b,s,k,z]
-		pi_samples = pi_samples.transpose(1,2).transpose(0,1)
-		# [s,k,b,z] -> [b,s,k]
-		pi_log_prob = pi_log_prob.transpose(1,2).transpose(0,1).sum(dim=-1)
-		# Standardize the proposal samples in each modality-specific ref. frame.
-		std_pi_samples = pi_samples.unsqueeze(1)-means.unsqueeze(2).unsqueeze(2)
-		# [b,m,s,k,z]
-		std_pi_samples = std_pi_samples * \
-				torch.sqrt(precisions.unsqueeze(2).unsqueeze(2) + EPS)
-		# Get energies: [b,m,s,k]
-		energies = ENERGY_REG * self.energy_network(thetas, std_pi_samples)
-		# Sum over the modality energies, applying the missingness mask.
-		temp_mask = (~nan_mask).float().unsqueeze(-1).unsqueeze(-1) # [b,m,1,1]
-		energies = energies * temp_mask # [b,m,s,k]
-		energies = energies.sum(dim=1) # [b,s,k]
-		# OK -- if e is the output of the energy network, we're targeting the
-		# density \propto exp[-e(z)]pi(z) so that the proposal pi can regularize
-		# things. Then our target energy is E \equiv e(z) - log pi(z), but our
-		# importance weights are exp(-E(z))/pi(z), which is just exp(-e(z)).
-		#
-		# Calculate importance weights and energies.
-		log_iws = - energies # [b,s,k]
-		energies = energies - pi_log_prob # [b,s,k]
-		# Sample.
-		z_one_hot = gumbel_softmax(log_iws) # [b,s,k], last dim is one-hot
-		# [b,s,k] -> [b,s,k,z]
-		z_mask = z_one_hot.unsqueeze(-1).expand(-1,-1,-1,pi_samples.shape[-1])
-		z_samples = torch.sum(pi_samples * z_mask, dim=2) # [b,s,z]
-		# Estimate log probability under the EBM.
-		# We're making the approximation q(z_i|x) \approx EBM(z_i) / avg(w_j)
-		# => log q(z_i|x) \approx -E(z_i) - logavgexp(w_j)
-		log_avg_w = torch.logsumexp(log_iws, dim=-1) - log(self.k) # [b,s]
-		e_zi = torch.sum(energies * z_one_hot, dim=-1) # [b,s]
-		log_probs = - e_zi - log_avg_w
-		return z_samples, log_probs
 
 
 

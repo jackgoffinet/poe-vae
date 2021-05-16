@@ -94,7 +94,7 @@ for epoch in range(100):
    `--prior=uniform_hyperspherical`
    `--objective=elbo`
 * [MIWAE](https://arxiv.org/abs/1812.02633)
-   `--variational-strategy=unstructured`
+   `--unstructured-encoder=True`
    `--variational-posterior=diag_gaussian`
    `--prior=standard_gaussian`
    `--objective=elbo`
@@ -143,3 +143,5 @@ existing training framework, you will also have to modify `DATASET_MAP` and
 28. Implement jackknife variational inference?
 29. Implement vMF/vMF KL-divergence
 30. AR-ELBO: EBM and vMF models
+31. Double check unstructured recognition models work
+32. Simplify the LocScaleEbmStrategy parameters!

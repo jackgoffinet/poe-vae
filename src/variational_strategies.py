@@ -101,7 +101,6 @@ class GaussianPoeStrategy(AbstractVariationalStrategy):
 			temp_mask = (~temp_mask).float().unsqueeze(-1)
 			temp_mask = temp_mask.expand(-1,-1,precisions.shape[2])
 			precisions = precisions * temp_mask
-		# Combine all the experts. Include the 1.0 for the prior expert!
 		prec_means = means * precisions
 		if collapse:
 			return self.collapse(prec_means, precisions)
@@ -259,49 +258,48 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 		"""
 		Location/Scale EBM strategy: multiply the Gaussian proposals
 
-		The other EBM parameters, the thetas, are simply passed. The NaN mask
-		is also passed.
-
 		"""
 		super(LocScaleEbmStrategy, self).__init__()
 
-	def forward(self, thetas, means, log_precisions, nan_mask=None):
-		"""
-		Multiply the Gaussian proposals.
 
-		The other EBM parameters, the thetas,
-		are simply passed. The NaN mask is also passed.
+	def forward(self, thetas, means, log_precisions, nan_mask=None, \
+		collapse=True):
+		"""
+		Multiply the Gaussian proposals. Mostly just pass the other parameters.
 
 		Parameters
 		----------
 		thetas: torch.Tensor or tuple of torch.Tensor
+			Describes deviations from the Gaussian proposal
 			Shape:
 				[b,m,theta_dim] if vectorized
 				[m][b,theta_dim] otherwise
 		means : torch.Tensor or tuple of torch.Tensor
+			Means of the Gaussian proposals
 			Shape:
 				[batch,m,z_dim] if vectorized
 				[m][batch,z_dim] otherwise
 		log_precisions : torch.Tensor or tuple of torch.Tensor
+			log precisions of the Gaussian proposals
 			Shape:
 				[batch,m,z_dim] if vectorized
 				[m][batch,z_dim] otherwise
 		nan_mask : torch.Tensor
 			Indicates where data is missing.
 			Shape: [b,m]
+		collapse : bool, optional
+			Doesn't do anything. Here because AR-ELBO expects it.
 
 		Returns
 		-------
 		thetas : torch.Tensor
 			Shape: [b,m,theta_dim]
-		mean : torch.Tensor
-			Shape: [b,z_dim]
-		precision : torch.Tensor
-			Shape: [b,z_dim]
 		means : torch.Tensor
-			Shape: [b,m,z_dim]
+			Shape: [b,m,z]
+		prec_means : torch.Tensor
+			Shape: [b,m,z]
 		precisions : torch.Tensor
-			Shape: [b,m,z_dim]
+			Shape: [b,m,z]
 		nan_mask : torch.Tensor
 			Shape : [b,m]
 		"""
@@ -315,11 +313,8 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 			temp_mask = (~nan_mask).float().unsqueeze(-1)
 			temp_mask = temp_mask.expand(-1,-1,precisions.shape[2])
 			precisions = precisions * temp_mask
-		# Combine all the experts. Include the 1.0 for the prior expert!
-		precision = torch.sum(precisions, dim=1) + 1.0 # [b,z_dim]
-		prec_mean = torch.sum(means * precisions, dim=1) # [b,z_dim]
-		mean = prec_mean / (precision + self.EPS)
-		return thetas, mean, precision, means, precisions, nan_mask
+		prec_means = means * precisions
+		return thetas, means, prec_means, precisions, nan_mask
 
 
 

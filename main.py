@@ -25,7 +25,7 @@ def get_grad_norm(obj):
 	return sum(p.grad.data.norm(2).item()**2 for p in obj.parameters()) ** 0.5
 
 
-def train_epoch(objective, loader, optimizer, epoch, agg):
+def train_epoch(objective, loader, optimizer, epoch, agg, grad_clip):
 	"""
 	Train for a single epoch.
 
@@ -36,6 +36,7 @@ def train_epoch(objective, loader, optimizer, epoch, agg):
 	optimizer : torch.optim.Optimizer
 	epoch : int
 	agg : defaultdict
+	grad_clip : float
 	"""
 	objective.train()
 	b_loss = 0
@@ -43,10 +44,9 @@ def train_epoch(objective, loader, optimizer, epoch, agg):
 		optimizer.zero_grad()
 		loss = objective(batch)
 		if torch.isnan(loss):
-			print("NaN Loss!")
-			quit()
+			quit("NaN Loss!")
 		loss.backward()
-		# torch.nn.utils.clip_grad_norm_(objective.parameters(), args.clip)
+		# torch.nn.utils.clip_grad_norm_(objective.parameters(), grad_clip)
 		optimizer.step()
 		b_loss += loss.item() * get_batch_len(batch)
 	agg['train_loss'].append(b_loss / len(loader.dataset))
@@ -200,7 +200,7 @@ def main(
 		test_freq=10,
 		no_cuda=False,
 		seed=42,
-		grad_clip=1e3,
+		grad_clip=1e2,
 		train_m=0.5,
 		test_m=0.0,
 		data_dir='/media/jackg/Jacks_Animal_Sounds/torchvision/',
@@ -356,7 +356,14 @@ def main(
 		agg = defaultdict(list)
 	# Enter a train loop.
 	for epoch in range(prev_epochs+1, prev_epochs+epochs+1):
-		train_epoch(objective, dataloaders['train'], optimizer, epoch, agg)
+		train_epoch(
+			objective,
+			dataloaders['train'],
+			optimizer,
+			epoch,
+			agg,
+			grad_clip,
+		)
 		if epoch % test_freq == 0:
 			test_epoch(objective, dataloaders['test'], epoch, agg)
 		if epoch % mll_freq == 0: #  or epoch == prev_epochs + epochs

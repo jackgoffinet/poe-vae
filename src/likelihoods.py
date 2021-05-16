@@ -36,7 +36,7 @@ class AbstractLikelihood(torch.nn.Module):
 			Shape:
 				[1][batch,n_samples,m_dim] if vectorized
 				[1][modalities][batch,n_samples,sub_modalities,m_dim] otherwise
-		nan_mask : torch.Tensor or tuple of torch.Tensor
+		nan_mask : torch.Tensor
 			Shape: [batch,modalities]
 
 		Returns
