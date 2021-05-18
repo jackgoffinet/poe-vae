@@ -19,7 +19,7 @@ from .distributions.von_mises_fisher import VonMisesFisher
 from .gumbel_softmax import gumbel_softmax
 
 EPS = 1e-5
-ENERGY_REG = 0.1
+ENERGY_REG = 1.0
 
 
 
@@ -573,7 +573,7 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 				torch.sqrt(precisions.unsqueeze(2) + self.EPS) # [b,m,s,z]
 		# Get energies by passing the thetas and standardized proposal samples
 		# through a network: [b,m,s]
-		energies = ENERGY_REG * self.energy_network(thetas, std_pi_samples)
+		energies = self.energy_network(thetas, std_pi_samples)
 		# Apply missingness mask to the energies.
 		temp_mask = (~nan_mask).float().unsqueeze(-1) # [b,m,1]
 		energies = energies * temp_mask # [b,m,s]
@@ -584,9 +584,9 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 			self.m_idx = torch.cat([self.m_idx, m_idx], dim=0)
 		log_iws = - torch.sum(energies[:,self.m_idx], dim=1) # [b,s]
 		# Normalize the importance weights.
-		z_weights = torch.nn.functional.softmax(log_iws, dim=1)
+		z_weights = torch.nn.functional.softmax(log_iws, dim=1) # [b,s]
 		# Find the log density ratio of the samples under the two beliefs.
-		log_ratio = - torch.sum(energies[:,m_idx], dim=1) # [b,s]
+		log_ratio = - torch.sum(energies[:,m_idx], dim=1) # [b,m,s] -> [b,s]
 		log_ratio = log_ratio + updated_pi_log_prob - pi_log_prob # [b,s]
 		# Use these pieces to estimate KL.
 		kld = torch.sum(z_weights * log_ratio, dim=1) # [b]
@@ -656,7 +656,7 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 				torch.sqrt(precisions.unsqueeze(2).unsqueeze(2) + self.EPS)
 		# Get energies by passing the thetas and standardized proposal samples
 		# through a network: [b,m,s,k]
-		energies = ENERGY_REG * self.energy_network(thetas, std_pi_samples)
+		energies =  self.energy_network(thetas, std_pi_samples)
 		# Sum over the modality energies, applying the missingness mask.
 		temp_mask = (~nan_mask).float().unsqueeze(-1).unsqueeze(-1) # [b,m,1,1]
 		energies = energies * temp_mask # [b,m,s,k]
@@ -714,7 +714,7 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 		h = F.relu(self.e_1(h))
 		h = F.relu(self.e_2(h))
 		h = self.e_3(h).squeeze(-1) # [b,m,s,k] or [b,m,s]
-		return h
+		return ENERGY_REG * torch.tanh(h)
 
 
 

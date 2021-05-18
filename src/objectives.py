@@ -709,6 +709,7 @@ class ArElbo(VaeObjective):
 		# Return a loss.
 		log_likes = torch.stack(log_likes, dim=1).sum(dim=1) # [b]
 		klds = torch.stack(klds, dim=1).sum(dim=1) # [b]
+		# print(torch.mean(log_likes).item(), torch.mean(klds).item())
 		elbo = torch.mean(log_likes - klds) # [b] -> []
 		if torch.isnan(elbo).sum() > 0:
 			print("log_likes", torch.isnan(log_likes).sum().item())
