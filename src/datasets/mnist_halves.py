@@ -67,13 +67,13 @@ class MnistHalvesDataset(Dataset):
 		test_reconstruct_fn = os.path.join(exp_dir, TEST_RECONSTRUCT_FN)
 		# Plot generated data.
 		gen_data = objective.generate(n_samples=5) # [2][1,5,1,392]
-		gen_data = np.concatenate(gen_data, axis=2).reshape(1,1,5,784)
+		gen_data = np.concatenate(gen_data, axis=-1).reshape(1,1,5,784)
 		self.plot(gen_data, generate_fn)
 		# Plot train reconstructions.
 		for batch in loaders['train']:
 			recon_data = objective.reconstruct(batch) # [m][b,s,m,m_dim]
-			recon_data = np.array(recon_data)[:,:5] # [1,5,1,784,1]
-			recon_data = recon_data.reshape(1,1,5,784)
+			recon_data = np.stack(recon_data, axis=-2)
+			recon_data = recon_data.reshape(-1,784)[:5].reshape(1,1,5,784)
 			break
 		# [2,5,392]
 		data = np.array([d.detach().cpu().numpy() for d in batch[:5]])[:,:5]
@@ -83,8 +83,8 @@ class MnistHalvesDataset(Dataset):
 		# Plot test reconstructions.
 		for batch in loaders['test']:
 			recon_data = objective.reconstruct(batch) # [m][b,s,m,m_dim]
-			recon_data = np.array(recon_data)[:,:5] # [1,5,1,784,1]
-			recon_data = recon_data.reshape(1,1,5,784)
+			recon_data = np.stack(recon_data, axis=-2)
+			recon_data = recon_data.reshape(-1,784)[:5].reshape(1,1,5,784)
 			break
 		# [2,5,392]
 		data = np.array([d.detach().cpu().numpy() for d in batch[:5]])[:,:5]
