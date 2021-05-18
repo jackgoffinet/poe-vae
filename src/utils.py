@@ -226,9 +226,9 @@ def check_args(
 		assert variational_posterior == 'loc_scale_ebm', \
 				"Only the variational posterior 'loc_scale_ebm' can be used" \
 				+ " with the variational_strategy 'loc_scale_ebm'."
-		assert objective in ['iwae', 'dreg_iwae'], \
-				"Only the IWAE or DReG IWAE objectives can be used with a " \
-				+ "Location/Scale EBM variational strategy."
+		assert objective in ['iwae', 'dreg_iwae', 'ar_elbo'], \
+				"Only the IWAE, DReG IWAE, and AR-ELBO objectives can be used" \
+				+ " with a Location/Scale EBM variational strategy."
 	# Check objective-related issues.
 	if objective == 'mmvae_elbo':
 		assert variational_posterior == 'diag_gaussian_mixture', \

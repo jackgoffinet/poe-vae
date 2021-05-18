@@ -46,6 +46,7 @@ def train_epoch(objective, loader, optimizer, epoch, agg, grad_clip):
 		if torch.isnan(loss):
 			quit("NaN Loss!")
 		loss.backward()
+		print(get_grad_norm(objective))
 		# torch.nn.utils.clip_grad_norm_(objective.parameters(), grad_clip)
 		optimizer.step()
 		b_loss += loss.item() * get_batch_len(batch)

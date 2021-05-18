@@ -314,6 +314,14 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 			temp_mask = temp_mask.expand(-1,-1,precisions.shape[2])
 			precisions = precisions * temp_mask
 		prec_means = means * precisions
+		if torch.isnan(precisions).sum() > 0:
+			print("LocScaleEbmStrategy NaN")
+			print("prec_means", torch.isnan(prec_means).sum())
+			print("thetas", torch.isnan(thetas).sum())
+			print("means", torch.isnan(means).sum())
+			print("precisions", torch.isnan(precisions).sum())
+			print("log_precisions", torch.isnan(log_precisions).sum())
+			print()
 		return thetas, means, prec_means, precisions, nan_mask
 
 

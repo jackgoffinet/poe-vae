@@ -132,16 +132,15 @@ existing training framework, you will also have to modify `DATASET_MAP` and
 
 12. Validation set for early stopping
 15. Double check DReG gradients
-16. STL gradients
-18. Well-defined proposals for EBM MLL
-19. Implement EBM IWAE variants
+16. Implement STL gradients?
 20. Student experts
 21. Compare network architectures w/ other papers
 22. partial-VAE implementation
 25. Add a documentation markdown file
-27. AR-ELBO needs new variational strategies?
 28. Implement jackknife variational inference?
 29. Implement vMF/vMF KL-divergence
 30. AR-ELBO: EBM and vMF models
 31. Double check unstructured recognition models work
-32. Simplify the LocScaleEbmStrategy parameters!
+33. Mode collapse issues
+34. MnistHalves plots are jumbled
+35. Is there an easy way for Encoder and DecoderModalityEmbeddings to share parameters?

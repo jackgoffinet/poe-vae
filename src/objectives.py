@@ -627,7 +627,7 @@ class ArElbo(VaeObjective):
 		----------
 		vae : torch.nn.ModuleDict
 		ar_step_size : int, optional
-			How many modalities to condition on in each step.
+			How many additional modalities conditioned on in each step.
 		dataset : str, optional
 			Used to determine the number of modalities.
 		"""
@@ -664,9 +664,10 @@ class ArElbo(VaeObjective):
 				collapse=False,
 		)
 		# Define a random permutation of modalities.
-		# Option 1: (much faster)
+		# Option 1: a single permutation for every batch item (much faster)
 		perm = torch.randperm(self.M) # [m]
-		# # Option 2:
+		# # Option 2: independent permutations for each batch item (very slow)
+		# # Maybe this could be sped up with a batched index-select method.
 		# perm = torch.stack(
 		# 		[torch.randperm(self.M) for _ in range(len(nan_mask))],
 		# 		dim=0,
@@ -680,14 +681,13 @@ class ArElbo(VaeObjective):
 			# # Option 2:
 			# perm_slice = perm[:,i:min(self.M, i+self.step)]
 			# Combine evidence across a few more modalities.
-			kld = self.variational_posterior.add_evidence(
+			kld, z_samples = self.variational_posterior.add_evidence(
 					*var_post_params,
 					perm_slice,
 					start_from_prior=(i==0),
-			) # [b]
+					return_sample=True,
+			) # [b], [b,1,z]
 			klds.append(kld)
-			# Get latent samples.
-			z_samples = self.variational_posterior.rsample() # [b,s,z], s=1
 			# Decode.
 			# This is a bit wasteful, and could be improved, but we're going to
 			# decode all the modalities and only take the ones we want.
@@ -710,6 +710,11 @@ class ArElbo(VaeObjective):
 		log_likes = torch.stack(log_likes, dim=1).sum(dim=1) # [b]
 		klds = torch.stack(klds, dim=1).sum(dim=1) # [b]
 		elbo = torch.mean(log_likes - klds) # [b] -> []
+		if torch.isnan(elbo).sum() > 0:
+			print("log_likes", torch.isnan(log_likes).sum().item())
+			print("klds", torch.isnan(klds).sum().item())
+			print("elbo NaN")
+			quit()
 		return -elbo
 
 
