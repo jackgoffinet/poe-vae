@@ -97,8 +97,10 @@ class MnistHalvesDataset(Dataset):
 		"""
 		MnistHalves plotting
 
+		Parameters
+		----------
 		data : numpy.ndarray or tuple of numpy.ndarray
-			Shape: [m,b,samples,x_dim] or [n_cols][m,b,samples,x_dim]
+			Shape: [1,1,samples,x_dim] or [n_cols][1,1,samples,x_dim]
 		fn : str
 		"""
 		if not isinstance(data, (list,tuple)):

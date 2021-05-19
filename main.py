@@ -25,7 +25,7 @@ def get_grad_norm(obj):
 	return sum(p.grad.data.norm(2).item()**2 for p in obj.parameters()) ** 0.5
 
 
-def train_epoch(objective, loader, optimizer, epoch, agg, grad_clip):
+def train_epoch(objective, loader, optimizer, epoch, kl_factor, agg, grad_clip):
 	"""
 	Train for a single epoch.
 
@@ -35,6 +35,7 @@ def train_epoch(objective, loader, optimizer, epoch, agg, grad_clip):
 	loader : torch.utils.DataLoader
 	optimizer : torch.optim.Optimizer
 	epoch : int
+	kl_factor : float
 	agg : defaultdict
 	grad_clip : float
 	"""
@@ -42,7 +43,7 @@ def train_epoch(objective, loader, optimizer, epoch, agg, grad_clip):
 	b_loss = 0
 	for i, batch in enumerate(loader):
 		optimizer.zero_grad()
-		loss = objective(batch)
+		loss = objective(batch, kl_factor=kl_factor)
 		if torch.isnan(loss):
 			quit("NaN Loss!")
 		loss.backward()
@@ -55,7 +56,7 @@ def train_epoch(objective, loader, optimizer, epoch, agg, grad_clip):
 	print('====> Epoch: {:03d} Train loss: {:.4f}'.format(epoch, agg['train_loss'][-1]))
 
 
-def test_epoch(objective, loader, epoch, agg):
+def test_epoch(objective, loader, epoch, kl_factor, agg):
 	"""
 	Test on the full test set.
 
@@ -70,7 +71,7 @@ def test_epoch(objective, loader, epoch, agg):
 	b_loss = 0
 	for i, batch in enumerate(loader):
 		with torch.no_grad():
-			loss = objective(batch)
+			loss = objective(batch, kl_factor=kl_factor)
 		b_loss += loss.item() * get_batch_len(batch)
 	agg['test_loss'].append(b_loss / len(loader.dataset))
 	agg['test_epoch'].append(epoch)
@@ -188,6 +189,7 @@ def main(
 		ebm_samples=10,
 		batch_size=256,
 		epochs=10,
+		kl_anneal_epochs=100,
 		latent_dim=20,
 		m_dim=4,
 		vmf_dim=4,
@@ -251,6 +253,8 @@ def main(
 		Size of training batches.
 	epochs : int, optional
 		Maximum number of epochs to train.
+	kl_anneal_epochs : int, optional
+		Number of epochs taken to anneal the KL term.
 	latent_dim : int, optional
 		Latent dimension.
 	m_dim : int, optional
@@ -362,11 +366,18 @@ def main(
 			dataloaders['train'],
 			optimizer,
 			epoch,
+			min(1.0, epoch/kl_anneal_epochs),
 			agg,
 			grad_clip,
 		)
 		if epoch % test_freq == 0:
-			test_epoch(objective, dataloaders['test'], epoch, agg)
+			test_epoch(
+					objective,
+					dataloaders['test'],
+					epoch,
+					1.0,
+					agg,
+			)
 		if epoch % mll_freq == 0: #  or epoch == prev_epochs + epochs
 			mll_helper(objective, dataloaders, epoch, agg)
 	epoch = prev_epochs + epochs

@@ -39,7 +39,7 @@ class VaeObjective(torch.nn.Module):
 		print("Trainabale parameters:", n_params)
 
 
-	def forward(self, x):
+	def forward(self, x, kl_factor=1.0):
 		"""
 		Evaluate loss on a minibatch `x`.
 
@@ -49,6 +49,7 @@ class VaeObjective(torch.nn.Module):
 			Shape:
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
+		kl_factor : float, optional
 
 		Returns
 		-------
@@ -323,7 +324,7 @@ class StandardElbo(VaeObjective):
 	def __init__(self, vae, **kwargs):
 		super(StandardElbo, self).__init__(vae)
 
-	def forward(self, xs):
+	def forward(self, xs, kl_factor=1.0):
 		"""
 		Evaluate the standard single-sample ELBO.
 
@@ -340,6 +341,7 @@ class StandardElbo(VaeObjective):
 			Shape:
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
+		kl_factor : float, optional
 
 		Returns
 		-------
@@ -360,7 +362,7 @@ class StandardElbo(VaeObjective):
 		# Evaluate loss.
 		assert len(log_likes.shape) == 1, f"len({log_likes.shape}) != 1"
 		assert len(kld.shape) == 1, f"len({kld.shape}) != 1"
-		loss = -torch.mean(log_likes - kld)
+		loss = -torch.mean(log_likes - kl_factor * kld)
 		return loss
 
 
@@ -371,7 +373,7 @@ class IwaeElbo(VaeObjective):
 		super(IwaeElbo, self).__init__(vae)
 		self.k = K
 
-	def forward(self, xs):
+	def forward(self, xs, kl_factor=1.0):
 		"""
 		Evaluate the multisample IWAE ELBO.
 
@@ -381,6 +383,7 @@ class IwaeElbo(VaeObjective):
 			Shape:
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
+		kl_factor : float, optional
 
 		Returns
 		-------
@@ -400,7 +403,8 @@ class IwaeElbo(VaeObjective):
 		log_likes = self.decode(z_samples, xs, nan_mask) # [b,s]
 		assert log_likes.shape[1] == self.k # assert k samples
 		# Define importance weights.
-		log_ws = log_pz + log_likes - log_qz - np.log(self.k) # [b,k]
+		log_ws = kl_factor * (log_pz - log_qz)
+		log_ws = log_ws + log_likes - np.log(self.k) # [b,k]
 		# Evaluate loss.
 		loss = -torch.mean(torch.logsumexp(log_ws, dim=1))
 		return loss
@@ -413,7 +417,7 @@ class DregIwaeElbo(VaeObjective):
 		super(DregIwaeElbo, self).__init__(vae)
 		self.k = K
 
-	def forward(self, xs):
+	def forward(self, xs, kl_factor):
 		"""
 		Evaluate the multisample IWAE ELBO with the DReG estimator.
 
@@ -426,6 +430,7 @@ class DregIwaeElbo(VaeObjective):
 			Shape:
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
+		kl_factor : float, optional
 
 		Returns
 		-------
@@ -456,7 +461,8 @@ class DregIwaeElbo(VaeObjective):
 		log_likes = self.decode(z_samples, xs, nan_mask) # [b,s]
 		assert log_likes.shape[1] == self.k # assert s samples
 		# Define importance weights.
-		log_ws = log_pz + log_likes - log_qz - np.log(self.k) # [b,s]
+		log_ws = kl_factor * (log_pz - log_qz)
+		log_ws = log_ws + log_likes - np.log(self.k) # [b,s]
 		# Doubly reparameterized gradients
 		with torch.no_grad():
 			weights = log_ws - torch.logsumexp(log_ws, dim=1, keepdim=True)
@@ -476,7 +482,7 @@ class MmvaeElbo(VaeObjective):
 		self.k = K
 		self.M = DATASET_MAP[dataset].n_modalities
 
-	def forward(self, xs):
+	def forward(self, xs, kl_factor=1.0):
 		"""
 		Stratified sampling IW-ELBO from Shi et al. (2019), Eq. 3.
 
@@ -489,6 +495,12 @@ class MmvaeElbo(VaeObjective):
 			Shape:
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
+		kl_factor : float, optional
+
+		Returns
+		-------
+		loss : torch.Tensor
+			Shape: []
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		xs, nan_mask = apply_nan_mask(xs)
@@ -526,7 +538,8 @@ class MmvaeElbo(VaeObjective):
 		# Define importance weights.
 		# We're going to logsumexp over the sample dimension (K) and average
 		# over the modality dimension (M).
-		log_ws = log_pz + log_likes - log_qz - np.log(self.k) # [b,s,m]
+		log_ws = kl_factor * (log_pz - log_qz)
+		log_ws = log_ws + log_likes - np.log(self.k) # [b,s,m]
 		with torch.no_grad():
 			weights = log_ws - torch.logsumexp(log_ws, dim=1, keepdim=True)
 			weights = torch.exp(weights) # [b,s,m]
@@ -556,7 +569,7 @@ class MvaeElbo(VaeObjective):
 		super(MvaeElbo, self).__init__(vae)
 		self.k = K
 
-	def forward(self, xs):
+	def forward(self, xs, kl_factor=1.0):
 		"""
 		Evaluate the subsampling ELBO from Wu & Goodman (2018, Eq. 5).
 
@@ -568,6 +581,7 @@ class MvaeElbo(VaeObjective):
 			Shape:
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
+		kl_factor : float, optional
 
 		Returns
 		-------
@@ -589,31 +603,44 @@ class MvaeElbo(VaeObjective):
 		nan_masks = [nan_mask]
 		# Then append the random subsets masks.
 		for i in range(self.k):
-			mask = torch.randint(0,1,nan_mask.shape,dtype=torch.bool)
+			mask = torch.randint(
+					0,
+					1,
+					nan_mask.shape,
+					dtype=torch.uint8,
+					device=nan_mask.device,
+			)
 			mask = torch.logical_or(mask, nan_mask)
 			nan_masks.append(mask)
 		# Then append the single modality masks.
 		for i in range(nan_mask.shape[1]):
 			mask = F.one_hot(torch.tensor([i]), num_classes=nan_mask.shape[1])
-			mask = mask.to(torch.bool).expand(nan_mask.shape[0], -1)
+			mask = mask.to(nan_mask.device, torch.uint8)
+			mask = mask.expand(nan_mask.shape[0], -1)
 			nan_masks.append(mask)
 		# For each NaN mask calculate a standard ELBO loss.
 		losses = []
 		for mask in nan_masks:
 			z_samples, log_qz, log_pz = self._encode_helper(encoding, mask)
 			assert log_pz.shape[1] == 1 # assert single sample
-			log_pz = log_pz.squeeze(1) # [b], remove sample dimension.
 			# Evaluate KL.
-			kld = self.variational_posterior.kld(self.prior).sum(dim=1) # [b]
+			kld = None
+			try:
+				kld = self.variational_posterior.kld(self.prior).sum(dim=1) # [b]
+			except:
+				pass
 			# Decode.
 			log_likes = self.decode(z_samples, xs, nan_mask) # [b,s]
 			assert log_likes.shape[1] == 1 # assert single sample
-			log_likes = log_likes.squeeze(1) # [b], remove sample dimension
 			# Evaluate loss.
-			assert len(log_pz.shape) == 1
-			assert len(log_likes.shape) == 1
-			assert len(kld.shape) == 1
-			loss = -torch.mean(log_pz + log_likes - kld)
+			if kld is None:
+				# If we don't have a KL divergence, do an IWAE estimate.
+				log_ws = kl_factor * (log_pz - log_qz) + log_likes # [b,k]
+				loss = -torch.mean(torch.logsumexp(log_ws, dim=1))
+			else:
+				log_likes = log_likes.squeeze(1) # [b], remove sample dimension
+				# Otherwise use the standard ELBO.
+				loss = -torch.mean(log_likes - kl_factor * kld)
 			losses.append(loss)
 		return sum(losses)
 
@@ -635,7 +662,7 @@ class ArElbo(VaeObjective):
 		self.step = ar_step_size
 		self.M = DATASET_MAP[dataset].n_modalities
 
-	def forward(self, xs):
+	def forward(self, xs, kl_factor=1.0):
 		"""
 		Evaluate an autoregressive ELBO.
 
@@ -645,6 +672,12 @@ class ArElbo(VaeObjective):
 			Shape:
 				[batch,modalities,m_dim] if vectorized
 				[modalities][batch,m_dim] otherwise
+		kl_factor : float, optional
+
+		Returns
+		-------
+		loss : torch.Tensor
+			Shape: []
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		xs, nan_mask = apply_nan_mask(xs)
@@ -710,7 +743,7 @@ class ArElbo(VaeObjective):
 		log_likes = torch.stack(log_likes, dim=1).sum(dim=1) # [b]
 		klds = torch.stack(klds, dim=1).sum(dim=1) # [b]
 		# print(torch.mean(log_likes).item(), torch.mean(klds).item())
-		elbo = torch.mean(log_likes - klds) # [b] -> []
+		elbo = torch.mean(log_likes - kl_factor * klds) # [b] -> []
 		if torch.isnan(elbo).sum() > 0:
 			print("log_likes", torch.isnan(log_likes).sum().item())
 			print("klds", torch.isnan(klds).sum().item())

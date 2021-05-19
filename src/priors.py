@@ -118,7 +118,7 @@ class UniformHypersphericalPrior(AbstractPrior):
 		super(UniformHypersphericalPrior, self).__init__()
 		self.n_vmfs = n_vmfs
 		self.vmf_dim = vmf_dim
-		self.dist = HypersphericalUniform(self.vmf_dim-1, device=device)
+		self.dist = HypersphericalUniform(self.vmf_dim, device=device)
 
 
 	def forward(self, x):
@@ -152,7 +152,6 @@ class UniformHypersphericalPrior(AbstractPrior):
 		samples : torch.Tensor
 			Shape: [batch,n_samples,z_dim]
 		"""
-		raise NotImplementedError
 		sample_shape = torch.Size([n_batches,n_samples,self.n_vmfs])
 		samples = self.dist.sample(shape=sample_shape)
 		return samples.view(n_batches, n_samples, -1)
