@@ -615,6 +615,7 @@ class MvaeElbo(VaeObjective):
 		# Then append the single modality masks.
 		for i in range(nan_mask.shape[1]):
 			mask = F.one_hot(torch.tensor([i]), num_classes=nan_mask.shape[1])
+			mask = 1 - mask
 			mask = mask.to(nan_mask.device, torch.uint8)
 			mask = mask.expand(nan_mask.shape[0], -1)
 			nan_masks.append(mask)
