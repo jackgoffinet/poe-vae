@@ -605,7 +605,7 @@ class MvaeElbo(VaeObjective):
 		for i in range(self.k):
 			mask = torch.randint(
 					0,
-					1,
+					2,
 					nan_mask.shape,
 					dtype=torch.uint8,
 					device=nan_mask.device,
@@ -645,115 +645,6 @@ class MvaeElbo(VaeObjective):
 				loss = -torch.mean(log_likes - kl_factor * kld)
 			losses.append(loss)
 		return sum(losses)
-
-
-
-class ArElbo(VaeObjective):
-
-	def __init__(self, vae, ar_step_size=1, dataset='mnist_halves', **kwargs):
-		"""
-		Parameters
-		----------
-		vae : torch.nn.ModuleDict
-		ar_step_size : int, optional
-			How many additional modalities conditioned on in each step.
-		dataset : str, optional
-			Used to determine the number of modalities.
-		"""
-		super(ArElbo, self).__init__(vae)
-		self.step = ar_step_size
-		self.M = DATASET_MAP[dataset].n_modalities
-
-
-	def forward(self, xs, kl_factor=1.0):
-		"""
-		Evaluate an autoregressive ELBO.
-
-		Parameters
-		----------
-		xs : torch.Tensor or tuple of torch.Tensor
-			Shape:
-				[batch,modalities,m_dim] if vectorized
-				[modalities][batch,m_dim] otherwise
-		kl_factor : float, optional
-
-		Returns
-		-------
-		loss : torch.Tensor
-			Shape: []
-		"""
-		# Get missingness pattern, replace with zeros to prevent NaN gradients.
-		xs, nan_mask = apply_nan_mask(xs)
-		assert nan_mask.shape[1] == self.M, f"{nan_mask}.shape[1] != {self.M}"
-		# Encode data.
-		# encoding shape:
-		# [n_params][b,m,param_dim] if vectorized
-		# [m][n_params][b,param_dim] otherwise
-		encoding = self.encoder(xs)
-		# Transpose first two dimensions: [n_params][m][b,param_dim]
-		if isinstance(xs, (tuple,list)):
-			encoding = tuple(tuple(e) for e in zip(*encoding))
-		# Get evidence.
-		# var_post_params shape: [n_params][b,m,*] where * is parameter dim.s.
-		var_post_params = self.variational_strategy(
-				*encoding,
-				nan_mask=nan_mask,
-				collapse=False,
-		)
-		# Define a random permutation of modalities.
-		# Option 1: a single permutation for every batch item (much faster)
-		perm = torch.randperm(self.M) # [m]
-		# # Option 2: independent permutations for each batch item (very slow)
-		# # Maybe this could be sped up with a batched index-select method.
-		# perm = torch.stack(
-		# 		[torch.randperm(self.M) for _ in range(len(nan_mask))],
-		# 		dim=0,
-		# ) # [b,m]
-		# Collect log likelihoods and KL-divergences.
-		log_likes, klds = [], []
-		i = 0
-		while i < self.M:
-			# Option 1:
-			perm_slice = perm[i:min(self.M, i+self.step)]
-			# # Option 2:
-			# perm_slice = perm[:,i:min(self.M, i+self.step)]
-			# Combine evidence across a few more modalities.
-			kld, z_samples = self.variational_posterior.add_evidence(
-					*var_post_params,
-					perm_slice,
-					start_from_prior=(i==0),
-					return_sample=True,
-			) # [b], [b,1,z]
-			klds.append(kld)
-			# Decode.
-			# This is a bit wasteful, and could be improved, but we're going to
-			# decode all the modalities and only take the ones we want.
-			log_like = self.decode(
-					z_samples,
-					xs,
-					nan_mask,
-					combine_modalities=False,
-			).squeeze(1) # [b,s,m] -> [b,m]
-			# Option 1:
-			log_like = log_like[:,perm_slice].sum(dim=1) # [b,step] -> [b]
-			# # Option 2:
-			# log_like = torch.stack(
-			# 		[a[j] for a,j in zip(log_like, perm_slice)],
-			# 		dim=0,
-			# ).sum(dim=1) # [b,step] -> [b]
-			log_likes.append(log_like)
-			i += self.step
-		# Return a loss.
-		log_likes = torch.stack(log_likes, dim=1).sum(dim=1) # [b]
-		klds = torch.stack(klds, dim=1).sum(dim=1) # [b]
-		# print(torch.mean(log_likes).item(), torch.mean(klds).item())
-		elbo = torch.mean(log_likes - kl_factor * klds) # [b] -> []
-		if torch.isnan(elbo).sum() > 0:
-			print("log_likes", torch.isnan(log_likes).sum().item())
-			print("klds", torch.isnan(klds).sum().item())
-			print("elbo NaN")
-			quit()
-		return -elbo
 
 
 

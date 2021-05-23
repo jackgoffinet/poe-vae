@@ -48,7 +48,7 @@ def train_epoch(objective, loader, optimizer, epoch, kl_factor, agg, grad_clip):
 			quit("NaN Loss!")
 		loss.backward()
 		# print(get_grad_norm(objective))
-		# torch.nn.utils.clip_grad_norm_(objective.parameters(), grad_clip)
+		torch.nn.utils.clip_grad_norm_(objective.parameters(), grad_clip)
 		optimizer.step()
 		b_loss += loss.item() * get_batch_len(batch)
 	agg['train_loss'].append(b_loss / len(loader.dataset))
@@ -170,6 +170,8 @@ def mll_helper(objective, dataloaders, epoch, agg):
 		agg['test_mll'].append(mll)
 		agg['test_mll_epoch'].append(epoch)
 		print("Test MLL:", mll, ", time:", round(toc-tic,2))
+		return True
+	return False
 
 
 def save_aggregator(agg, agg_fn):
@@ -189,15 +191,16 @@ def main(
 		lr=1e-3,
 		K=10,
 		ebm_samples=10,
-		batch_size=256,
-		epochs=10,
-		kl_anneal_epochs=100,
 		latent_dim=20,
 		m_dim=4,
 		vmf_dim=4,
 		n_vmfs=5,
 		theta_dim=4,
 		embed_dim=8,
+		batch_size=256,
+		epochs=10,
+		kl_anneal_epochs=100,
+		no_improvement=100,
 		ar_step_size=1,
 		obs_std_dev=0.1,
 		pre_trained=False,
@@ -251,12 +254,6 @@ def main(
 	ebm_samples : int, optional
 		Number of samples for the self-normalized importance sampling (SNIS)
 		strategy for the energy-based model (EBM) variational posterior.
-	batch_size : int, optional
-		Size of training batches.
-	epochs : int, optional
-		Maximum number of epochs to train.
-	kl_anneal_epochs : int, optional
-		Number of epochs taken to anneal the KL term.
 	latent_dim : int, optional
 		Latent dimension.
 	m_dim : int, optional
@@ -272,6 +269,15 @@ def main(
 		For energy-based approximate posteriors.
 	embed_dim : int, optional
 		For learning a modality embedding.
+	batch_size : int, optional
+		Size of training batches.
+	epochs : int, optional
+		Maximum number of epochs to train.
+	kl_anneal_epochs : int, optional
+		Number of epochs taken to anneal the KL term.
+	no_improvement : int, optional
+		Terminate after there's been no validation set improvement in this many
+		epochs.
 	ar_step_size : int, optional
 		How many modalities to condition on in each step of the AR-ELBO.
 	obs_std_dev : float, optional
@@ -324,6 +330,7 @@ def main(
 			quit(f"Couldn't find {agg_fn} to load")
 	else:
 		if os.path.exists(exp_dir):
+			pass
 			_ = input("Experiment path already exists! Continue? ")
 			try:
 				os.remove(log_fn)
@@ -362,6 +369,7 @@ def main(
 	if agg is None:
 		agg = defaultdict(list)
 	# Enter a train loop.
+	last_improvement_epoch = prev_epochs+1
 	for epoch in range(prev_epochs+1, prev_epochs+epochs+1):
 		train_epoch(
 			objective,
@@ -380,9 +388,13 @@ def main(
 					1.0,
 					agg,
 			)
-		if epoch % mll_freq == 0: #  or epoch == prev_epochs + epochs
-			mll_helper(objective, dataloaders, epoch, agg)
-	epoch = prev_epochs + epochs
+		if epoch % mll_freq == 0:
+			improvement = mll_helper(objective, dataloaders, epoch, agg)
+			if improvement:
+				last_improvement_epoch = epoch
+			elif epoch - last_improvement_epoch >= no_improvement:
+				print(f"No improvement in {no_improvement} epochs, stopping.")
+				break
 	# Save the aggregrator.
 	save_aggregator(agg, agg_fn)
 	# Plot reconstructions and generations.

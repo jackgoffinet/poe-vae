@@ -266,7 +266,7 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 	def forward(self, thetas, means, log_precisions, nan_mask=None, \
 		collapse=True):
 		"""
-		Multiply the Gaussian proposals. Mostly just pass the other parameters.
+		Mostly just pass the parameters and apply NaN mask.
 
 		Parameters
 		----------
@@ -309,6 +309,7 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 			means = torch.stack(means, dim=1) # [b,m,z]
 			log_precisions = torch.stack(log_precisions, dim=1) # [b,m,z]
 		precisions = log_precisions.exp() # [b,m,z]
+		precisions = torch.clamp(precisions, max=50.0)
 		if nan_mask is not None:
 			assert len(precisions.shape) == 3, f"len({precisions.shape}) != 3"
 			temp_mask = (~nan_mask).float().unsqueeze(-1)

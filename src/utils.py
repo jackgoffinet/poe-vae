@@ -38,6 +38,7 @@ IGNORED_KEYS = [
 		'test_freq',
 		'no_cuda',
 		'save_model',
+		'no_improvement',
 ]
 
 
