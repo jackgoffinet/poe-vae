@@ -618,6 +618,7 @@ class MvaeElbo(VaeObjective):
 			mask = 1 - mask
 			mask = mask.to(nan_mask.device, torch.uint8)
 			mask = mask.expand(nan_mask.shape[0], -1)
+			mask = torch.logical_or(mask, nan_mask)
 			nan_masks.append(mask)
 		# For each NaN mask calculate a standard ELBO loss.
 		losses = []
@@ -663,6 +664,7 @@ class ArElbo(VaeObjective):
 		self.step = ar_step_size
 		self.M = DATASET_MAP[dataset].n_modalities
 
+
 	def forward(self, xs, kl_factor=1.0):
 		"""
 		Evaluate an autoregressive ELBO.
@@ -682,6 +684,7 @@ class ArElbo(VaeObjective):
 		"""
 		# Get missingness pattern, replace with zeros to prevent NaN gradients.
 		xs, nan_mask = apply_nan_mask(xs)
+		assert nan_mask.shape[1] == self.M, f"{nan_mask}.shape[1] != {self.M}"
 		# Encode data.
 		# encoding shape:
 		# [n_params][b,m,param_dim] if vectorized

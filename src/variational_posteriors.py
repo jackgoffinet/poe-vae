@@ -19,7 +19,7 @@ from .distributions.von_mises_fisher import VonMisesFisher
 from .gumbel_softmax import gumbel_softmax
 
 EPS = 1e-5
-ENERGY_REG = 3.0
+ENERGY_REG = 8.0
 
 
 

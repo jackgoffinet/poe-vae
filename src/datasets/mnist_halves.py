@@ -26,7 +26,7 @@ class MnistHalvesDataset(Dataset):
 	modality_dim = 392
 	vectorized_modalities = False
 
-	def __init__(self, device, missingness=0.5, data_dir='data/', train=True):
+	def __init__(self, device, missingness=0.5, data_dir='data/', mode='train'):
 		"""
 		Binary MNIST data with image halves treated as two modalities.
 
@@ -37,10 +37,18 @@ class MnistHalvesDataset(Dataset):
 		----------
 		data_fn : str
 		missingness : float
+		data_dir : str
+		mode : {'train', 'valid', 'test'}
 		"""
+		assert mode in ['train', 'valid', 'test']
 		self.missingness = missingness
+		train = mode in ['train', 'valid']
 		dataset = datasets.MNIST(data_dir, train=train, download=True)
 		data = dataset.data.view(-1,784)
+		if mode == 'train':
+			data = data[:int(round(5/6 *len(data)))]
+		elif mode == 'valid':
+			data = data[int(round(5/6 *len(data))):]
 		self.view_1 = torch.zeros(data.shape[0], 392, dtype=torch.uint8)
 		self.view_2 = torch.zeros(data.shape[0], 392, dtype=torch.uint8)
 		self.view_1[data[:,:392] > 127] = 1

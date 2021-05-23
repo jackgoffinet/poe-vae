@@ -153,21 +153,23 @@ def estimate_marginal_log_like(objective, loader, k=2000, mini_k=128, \
 	return np.mean(batch_res)
 
 
-def mll_helper(objective, dataloaders, epoch, agg, train_mll=False):
+def mll_helper(objective, dataloaders, epoch, agg):
 	"""Estimate marginal log likelihoods."""
+	# First estimate MLL on the validation set.
 	tic = perf_counter()
-	mll = estimate_marginal_log_like(objective, dataloaders['test'])
+	mll = estimate_marginal_log_like(objective, dataloaders['valid'])
 	toc = perf_counter()
-	agg['test_mll'].append(mll)
-	agg['test_mll_epoch'].append(epoch)
-	print("Test MLL: ", mll, ", time:", round(toc-tic,2))
-	if train_mll:
+	agg['valid_mll'].append(mll)
+	agg['valid_mll_epoch'].append(epoch)
+	print("Valid MLL: ", mll, ", time:", round(toc-tic,2))
+	# If it's the best performance we've seen, also evaluate on the test set.
+	if mll == max(agg['valid_mll']):
 		tic = perf_counter()
-		mll = estimate_marginal_log_like(objective, dataloaders['train'])
+		mll = estimate_marginal_log_like(objective, dataloaders['test'])
 		toc = perf_counter()
-		agg['train_mll'].append(mll)
-		agg['train_mll_epoch'].append(epoch)
-		print("Train MLL time:", mll, ", time:", round(toc-tic,2))
+		agg['test_mll'].append(mll)
+		agg['test_mll_epoch'].append(epoch)
+		print("Test MLL:", mll, ", time:", round(toc-tic,2))
 
 
 def save_aggregator(agg, agg_fn):

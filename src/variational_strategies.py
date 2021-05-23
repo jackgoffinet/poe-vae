@@ -232,7 +232,8 @@ class VmfPoeStrategy(AbstractVariationalStrategy):
 		if tuple_flag:
 			kappa_mus = torch.stack(kappa_mus, dim=1) # [b,m,n_vmf*(vmf_dim+1)]
 		assert len(kappa_mus.shape) == 3, f"len({kappa_mus.shape}) != 3"
-		assert kappa_mus.shape[2] == self.n_vmfs * (self.vmf_dim+1)
+		assert kappa_mus.shape[2] == self.n_vmfs * (self.vmf_dim+1), \
+				f"error: {kappa_mus.shape}, {self.n_vmfs}, {self.vmf_dim}"
 		new_shape = kappa_mus.shape[:2]+(self.n_vmfs, self.vmf_dim+1)
 		kappa_mus = kappa_mus.view(new_shape) # [b,m,n_vmfs,vmf_dim+1]
 		if nan_mask is not None:

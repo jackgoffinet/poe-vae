@@ -62,15 +62,16 @@ class Logger(object):
 
 
 
-def make_dataloaders(device, dataset='mnist_halves', train_m=0.5, test_m=0.0, \
-	batch_size=256, data_dir='/data', **kwargs):
+def make_dataloaders(device, dataset='mnist_halves', train_m=0.5, valid_m=0.0, \
+	test_m=0.0, batch_size=256, data_dir='/data', **kwargs):
 	"""
-	Make train and test DataLoaders.
+	Make train, valid, and test DataLoaders.
 
 	Parameters
 	----------
 	dataset : str, optional
 	train_m : float, optional
+	valid_m : float, optional
 	test_m : float, optional
 	batch_size : str, optional
 	data_dir : str, optional
@@ -78,20 +79,26 @@ def make_dataloaders(device, dataset='mnist_halves', train_m=0.5, test_m=0.0, \
 	Returns
 	-------
 	dataloaders : dict
-		Maps the keys 'train' and 'test' to respective DataLoaders.
+		Maps the keys 'train', 'valid', and 'test' to respective DataLoaders.
 	"""
 	datasets = {
 		'train': DATASET_MAP[dataset](
 				device,
 				missingness=train_m,
 				data_dir=data_dir,
-				train=True,
+				mode='train',
+		),
+		'valid': DATASET_MAP[dataset](
+				device,
+				missingness=valid_m,
+				data_dir=data_dir,
+				mode='valid',
 		),
 		'test': DATASET_MAP[dataset](
 				device,
 				missingness=test_m,
 				data_dir=data_dir,
-				train=False,
+				mode='test',
 		),
 	}
 	dataloaders = {}
@@ -152,7 +159,7 @@ def make_objective(dataset='mnist_halves', variational_strategy='gaussian_poe',\
 	# Transform to ModuleDict.
 	vae = torch.nn.ModuleDict(vae)
 	# Then pass that to the objective.
-	objective = OBJECTIVE_MAP[objective](vae, **kwargs)
+	objective = OBJECTIVE_MAP[objective](vae, dataset=dataset, **kwargs)
 	return objective
 
 

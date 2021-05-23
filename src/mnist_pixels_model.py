@@ -49,10 +49,10 @@ def make_encoder(variational_strategy='gaussian_poe', latent_dim=20,
 	if variational_strategy == 'gaussian_poe':
 		out_dims = (latent_dim,latent_dim) # [means, log_precisions]
 		last_layer = SplitLinearLayer(256, out_dims)
-		nn.init.normal_(last_layer.layers[1].weight, 0.0, 0.0)
+		nn.init.normal_(last_layer.layers[1].weight, 0.0, 1e-3)
 		nn.init.normal_(last_layer.layers[1].bias, 1e-3, 1e-3)
 	elif variational_strategy == 'vmf_poe':
-		out_dims = (latent_dim,)
+		out_dims = ((vmf_dim + 1) * n_vmfs,)
 		last_layer = SplitLinearLayer(256, out_dims)
 	elif variational_strategy == 'loc_scale_ebm':
 		out_dims = (theta_dim,latent_dim,latent_dim)
