@@ -308,6 +308,7 @@ class LocScaleEbmStrategy(AbstractVariationalStrategy):
 			thetas = torch.stack(thetas, dim=1) # [b,m,theta]
 			means = torch.stack(means, dim=1) # [b,m,z]
 			log_precisions = torch.stack(log_precisions, dim=1) # [b,m,z]
+		thetas = torch.sigmoid(thetas) # restrict range of thetas
 		precisions = log_precisions.exp() # [b,m,z]
 		precisions = torch.clamp(precisions, max=50.0)
 		if nan_mask is not None:

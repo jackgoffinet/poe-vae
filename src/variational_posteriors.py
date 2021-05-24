@@ -19,9 +19,8 @@ from .distributions.von_mises_fisher import VonMisesFisher
 from .gumbel_softmax import gumbel_softmax
 
 EPS = 1e-5
-print("TEMP ENERGY REG")
-ENERGY_REG = 5.0
-EBM_MAX_PI_PRECISION = 100.0
+ENERGY_REG = log(4.0)
+MIN_PRECISION_FACTOR = 0.7
 
 
 
@@ -367,28 +366,21 @@ class VmfProductPosterior(AbstractVariationalPosterior):
 class LocScaleEbmPosterior(AbstractVariationalPosterior):
 	EPS = 1e-5
 
-	def __init__(self, ebm_samples=10, theta_dim=4, latent_dim=20,
-		ebm_alpha=0.9, **kwargs):
+	def __init__(self, ebm_samples=10, theta_dim=2, latent_dim=20, **kwargs):
 		"""
 		Location/scale EBM varitional posterior in Euclidean space.
 
-		Includes a proposal network and a network mapping thetas and zs to
-		energies.
 		"""
 		super(LocScaleEbmPosterior, self).__init__()
 		self.k = ebm_samples
-		self.alpha = ebm_alpha
 		# Energy network: (theta,z) -> scalar energy
-		self.e_1 = torch.nn.Linear(theta_dim+latent_dim, 128)
+		self.e_1 = torch.nn.Linear(theta_dim+1, 128)
 		self.e_2 = torch.nn.Linear(128, 1)
 		# Proposal network: (means,precisions) -> mean,precision
 		self.pi_1 = torch.nn.Linear(2, 128)
 		self.pi_2 = torch.nn.Linear(128, 1)
 		# Book-keeping for adding evidence.
-		self.pi_prec_mean = None
-		self.pi_precision = None
 		self.pi_dist = None
-		self.m_idx = None
 
 
 	def proposal_network(self, means, precisions):
@@ -408,7 +400,7 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 		) # [b,m,z,2]
 		h = F.relu(self.pi_1(cat)) # [b,m,z,128]
 		h = torch.sum(h, dim=1) # [b,z,128]
-		h = torch.sigmoid(self.pi_2(h)).squeeze(2) # [b,z]
+		h = torch.clamp(self.pi_2(h), min=MIN_PRECISION_FACTOR).squeeze(2)#[b,z]
 		precisions = (precisions * h.unsqueeze(1)) # [b,m,z]
 		prec_mean = (precisions * means).sum(dim=1) # [b,z]
 		precision = torch.sum(precisions, dim=1) + 1.0 # [b,z]
@@ -446,20 +438,8 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 			Estimated log probability of samples under the distribution.
 			Shape: [b,s]
 		"""
-		if samples is not None:
-			raise NotImplementedError
-
+		# Make a proposal distribution.
 		self.proposal_network(means, precisions)
-
-		# # Make a proposal distribution. Add 1.0 to the precision for the prior
-		# # expert.
-		# pi_precision = torch.sum(precisions, dim=1) + 1.0 # [b,z]
-		# # pi_precision = torch.clamp(pi_precision, max=EBM_MAX_PI_PRECISION)
-		# # print("min/max prec", torch.min(pi_precision).item(), torch.max(pi_precision).item())
-		# pi_mean = prec_means.sum(dim=1) / pi_precision # [b,z]
-		# pi_std_dev = torch.reciprocal(torch.sqrt(pi_precision) + self.EPS)
-		# self.pi_dist = Normal(pi_mean, pi_std_dev)
-
 		return self.rsample(
 				thetas,
 				means,
@@ -467,12 +447,13 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 				precisions,
 				nan_mask,
 				n_samples=n_samples,
+				samples=samples,
 				return_log_probs=True
 		) # [b,s,z], [b,s]
 
 
 	def rsample(self, thetas, means, prec_means, precisions, nan_mask,
-		n_samples=1, return_log_probs=False):
+		n_samples=1, samples=None, return_log_probs=False):
 		"""
 		Return reparameterized samples.
 
@@ -499,7 +480,20 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 			Returned if `return_log_probs`. Shape: [b,s]
 		"""
 		assert self.pi_dist is not None
-		pi_samples = self.pi_dist.rsample(sample_shape=(n_samples,self.k))
+		sample_flag = samples is not None
+		if thetas.requires_grad:
+			samp = self.k
+		else:
+			samp = 2 * self.k # a bit more careful for test estimates
+		# Get samples. [s,k,b,z]
+		pi_samples = self.pi_dist.rsample(sample_shape=(n_samples,samp))
+		if sample_flag:
+			samp += 1 # k += 1
+			print("pi_samples", pi_samples.shape)
+			print("samples", samples.shape)
+			samples = samples.unsqueeze(1) # [s,1,b,z]
+			pi_samples = torch.cat((samples,pi_samples), dim=1) # [s,k,b,z]
+			print("pi_samples", pi_samples.shape)
 		# Get the log prob of the samples under the soft product proposal.
 		pi_log_prob = self.pi_dist.log_prob(pi_samples)
 		# Get the log prob of the samples under the full product proposal.
@@ -511,6 +505,8 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 		pi_samples = pi_samples.transpose(1,2).transpose(0,1)
 		# [s,k,b,z] -> [b,s,k]
 		pi_log_prob = pi_log_prob.transpose(1,2).transpose(0,1).sum(dim=-1)
+		if sample_flag:
+			print("pi_log_prob", pi_log_prob.shape)
 		full_pi_log_prob = full_pi_log_prob.transpose(1,2).transpose(0,1)
 		full_pi_log_prob = full_pi_log_prob.sum(dim=-1) # [b,s,k]
 		# Get standardized versions of the proposal samples by representing
@@ -519,6 +515,7 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 		# [b,m,s,k,z]
 		std_pi_samples = std_pi_samples * \
 				torch.sqrt(precisions.unsqueeze(2).unsqueeze(2) + self.EPS)
+		std_pi_samples = torch.pow(std_pi_samples, 2).sum(dim=4) # [b,m,s,k]
 		# Get energies by passing the thetas and standardized proposal samples
 		# through a network: [b,m,s,k]
 		energies =  self.energy_network(thetas, std_pi_samples)
@@ -527,15 +524,18 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 		energies = energies * temp_mask # [b,m,s,k]
 		energies = energies.sum(dim=1) # [b,m,s,k] -> [b,s,k]
 		energies = energies - full_pi_log_prob
-		# OK -- if e is the output of the energy network, we're targeting the
-		# density \propto exp[-e(z)]pi(z) so that the proposal pi can regularize
-		# things. Then our target energy is E \equiv e(z) - log pi(z), but our
-		# importance weights are exp(-E(z))/pi(z), which is just exp(-e(z)).
-		#
 		# Calculate importance weights.
 		log_iws = - energies - pi_log_prob # [b,s,k]
+		if sample_flag:
+			print("energies", energies.shape)
+			print("log_iws", log_iws.shape)
 		# Sample.
-		z_one_hot = gumbel_softmax(log_iws) # [b,s,k], last dim is one-hot
+		if sample_flag:
+			z_one_hot = torch.zeros_like(log_iws)
+			z_one_hot[:,:] = 1.0
+			print("z_one_hot", z_one_hot.shape)
+		else:
+			z_one_hot = gumbel_softmax(log_iws) # [b,s,k], last dim is one-hot
 		# [b,s,k] -> [b,s,k,z]
 		z_mask = z_one_hot.unsqueeze(-1).expand(-1,-1,-1,pi_samples.shape[-1])
 		z_samples = torch.sum(pi_samples * z_mask, dim=2) # [b,s,z]
@@ -544,9 +544,12 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 		# Estimate log probability under the EBM.
 		# We're making the approximation q(z_i|x) \approx EBM(z_i) / avg(w_j)
 		# => log q(z_i|x) \approx -E(z_i) - logavgexp(w_j)
-		log_avg_w = torch.logsumexp(log_iws, dim=2) - log(self.k) # [b,s]
+		log_avg_w = torch.logsumexp(log_iws, dim=2) - log(samp) # [b,s]
 		e_zi = torch.sum(energies * z_one_hot, dim=2) # [b,s]
 		log_probs = - e_zi - log_avg_w # [b,s]
+		if sample_flag:
+			print(torch.min(log_probs), torch.max(log_probs))
+			quit()
 		return z_samples, log_probs
 
 
@@ -559,24 +562,20 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 		thetas : torch.Tensor
 			Shape: [b,m,theta_dim]
 		samples : torch.Tensor
-			Standardized latent samples. Shape: [b,m,s,k,z] or [b,m,s,z]
+			Standardized latent samples. Shape: [b,m,s,k]
 
 		Returns
 		-------
 		energies : torch.Tensor
 			Shape: [b,m,s,k]
 		"""
-		if len(samples.shape) == 5:
-			# Turn theta into [b,m,s,k,theta_dim]
-			thetas = thetas.unsqueeze(2).unsqueeze(2) # [b,m,1,1,theta]
-			thetas = thetas.expand(-1,-1,samples.shape[2],samples.shape[3],-1)
-		elif len(samples.shape) == 4:
-			# Turn theta into [b,m,s,theta_dim]
-			thetas = thetas.unsqueeze(2).expand(-1,-1,samples.shape[2],-1)
-		# Concatenate to [b,m,s,k,z+theta] or [b,m,s,z+theta].
-		h = torch.cat([thetas,samples], dim=-1)
+		# Turn theta into [b,m,s,k,theta_dim]
+		thetas = thetas.unsqueeze(2).unsqueeze(2) # [b,m,1,1,theta]
+		thetas = thetas.expand(-1,-1,samples.shape[2],samples.shape[3],-1)
+		# Concatenate to [b,m,s,k,theta+1]
+		h = torch.cat([thetas, samples.unsqueeze(-1)], dim=-1)
 		h = F.relu(self.e_1(h))
-		h = self.e_2(h).squeeze(-1) # [b,m,s,k] or [b,m,s]
+		h = self.e_2(h).squeeze(-1) # [b,m,s,k]
 		return ENERGY_REG * torch.sigmoid(h)
 
 

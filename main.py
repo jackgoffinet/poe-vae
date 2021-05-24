@@ -68,14 +68,15 @@ def test_epoch(objective, loader, epoch, kl_factor, agg):
 	agg : defaultdict
 	"""
 	objective.eval()
-	b_loss = 0
-	for i, batch in enumerate(loader):
-		with torch.no_grad():
+	with torch.no_grad():
+		b_loss = 0
+		for i, batch in enumerate(loader):
 			loss = objective(batch, kl_factor=kl_factor)
-		b_loss += loss.item() * get_batch_len(batch)
+			b_loss += loss.item() * get_batch_len(batch)
 	agg['test_loss'].append(b_loss / len(loader.dataset))
 	agg['test_epoch'].append(epoch)
-	print('====> Epoch: {:03d} Test loss: {:.4f}'.format(epoch, agg['test_loss'][-1]))
+	test_str = '====> Epoch: {:03d} Test loss: {:.4f}'
+	print(test_str.format(epoch, agg['test_loss'][-1]))
 
 
 def save_state(objective, optimizer, epoch, state_fn):
@@ -195,7 +196,7 @@ def main(
 		m_dim=4,
 		vmf_dim=4,
 		n_vmfs=5,
-		theta_dim=4,
+		theta_dim=2,
 		embed_dim=8,
 		batch_size=256,
 		epochs=10,
