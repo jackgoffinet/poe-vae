@@ -146,11 +146,12 @@ if __name__ == '__main__':
 			print("z_mean", z_mean)
 			grid, _, _ = make_grid(extent=extent)
 			grid_len = grid.shape[0]
-			grid = grid.view(grid.shape[0]**2,1,-1)
+			grid = grid.view(grid.shape[0]**2,1,-1) # [s,b,z]
+			print("grid", grid.shape)
 			_, log_qz = obj.variational_posterior(
 					*var_post_params,
 					samples=grid,
-					n_samples=1,
+					n_samples=len(grid),
 			) # [10,100]
 			print("log_qz", log_qz.shape)
 			log_qz = log_qz.view(grid_len,grid_len).transpose(0,1)

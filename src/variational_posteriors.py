@@ -489,7 +489,7 @@ class LocScaleEbmPosterior(AbstractVariationalPosterior):
 		pi_samples = self.pi_dist.rsample(sample_shape=(n_samples,samp))
 		if sample_flag:
 			samp += 1 # k += 1
-			print("pi_samples", pi_samples.shape)
+			print("pi_samples", pi_samples.shape) # [s,k,b,z]
 			print("samples", samples.shape)
 			samples = samples.unsqueeze(1) # [s,1,b,z]
 			pi_samples = torch.cat((samples,pi_samples), dim=1) # [s,k,b,z]

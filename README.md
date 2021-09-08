@@ -3,7 +3,7 @@
 ## Product of experts variational autoencoders for multimodal data
 
 This repo contains code for quickly and easily implementing multimodal
-variational autoencoders (VAEs).
+variational autoencoders (VAEs). This is a work in progress!
 
 
 ### Usage
