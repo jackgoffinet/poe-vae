@@ -67,7 +67,7 @@ objective = StandardElbo(vae)
 
 # Train the VAE like any other PyTorch model.
 loader = make_dataloader(...)
-optimizer = torch.optim.Adam(objective)
+optimizer = torch.optim.Adam(objective.parameters())
 for epoch in range(100):
   for batch in loader:
     objective.zero_grad()
